@@ -2,7 +2,7 @@
 #include "model.h"
 
 #define VD_CFG_MAGIC 0x56444B31
-#define VD_CFG_VER   3   // 2: screen_timeout, brightness; 3: weather location (appended; older blobs still load)
+#define VD_CFG_VER   4   // 2: screen_timeout, brightness; 3: weather location; 4: solar array (appended; older blobs still load)
 
 typedef struct {
     bool paired;
@@ -27,6 +27,9 @@ typedef struct {
     // v3
     float wx_lat, wx_lon;      // weather location: the last Starlink fix, or one entered by hand
     uint8_t wx_src;            // WX_SRC_*
+    // v4
+    uint16_t pv_w;             // solar array peak power, for the forecast's expected yield
+    uint8_t pv_eff;            // % of that rating that reaches the battery
 } vd_settings_t;
 
 enum { WX_SRC_NONE, WX_SRC_STARLINK, WX_SRC_MANUAL };

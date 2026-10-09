@@ -13,12 +13,13 @@
 #include "net/tailnet_svc.h"
 #include "net/time_svc.h"
 #include "ble/ble_svc.h"
+#include "net/weather.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
-enum { TAB_WIFI, TAB_TAILNET, TAB_DEV, TAB_HEATER, TAB_TIME, TAB_UNITS, TAB_ABOUT, TAB_N };
+enum { TAB_WIFI, TAB_TAILNET, TAB_DEV, TAB_HEATER, TAB_SOLAR, TAB_TIME, TAB_UNITS, TAB_ABOUT, TAB_N };
 static lv_obj_t *s_root, *tabs[TAB_N], *tab_meta[TAB_N], *panels[TAB_N];
 static int s_tab;
 static int64_t s_last_scan;
@@ -31,7 +32,7 @@ static lv_obj_t *tm_sub, *tm_sw, *tm_tz, *tm_off, *tm_fmt, *tm_manual, *tm_mlabe
 static lv_obj_t *un_seg;
 static uint8_t s_cand_order[PAIR_MAX_CANDS];
 
-static const char *TAB_NAMES[] = { "Wi-Fi", "Tailnet", "Devices", "Heater", "Time", "Display", "About" };
+static const char *TAB_NAMES[] = { "Wi-Fi", "Tailnet", "Devices", "Heater", "Solar", "Time", "Display", "About" };
 static const char *FMT_MAP[] = { "24h", "12h", "" };
 static const char *UNIT_MAP[] = { "Celsius °C", "Fahrenheit °F", "" };
 
@@ -497,6 +498,58 @@ static void refresh_about(void)
     else w_fmt(ab_up, "%lldh %02lldm", s / 3600, s % 3600 / 60);
 }
 
+// --- Solar: the array the forecast's expected yield is worked out for
+static lv_obj_t *sv_w, *sv_eff, *sv_ex;
+
+static void on_pv_w(lv_event_t *e)
+{
+    int v = g_cfg.pv_w + (int)(intptr_t)lv_event_get_user_data(e) * 10;
+    model_lock(); g_cfg.pv_w = v < 20 ? 20 : v > 2000 ? 2000 : v; cfg_done();
+}
+
+static void on_pv_eff(lv_event_t *e)
+{
+    int v = g_cfg.pv_eff + (int)(intptr_t)lv_event_get_user_data(e) * 5;
+    model_lock(); g_cfg.pv_eff = v < 30 ? 30 : v > 100 ? 100 : v; cfg_done();
+}
+
+// - value + row; holding a button keeps stepping.
+static lv_obj_t *stepper(lv_obj_t *p, lv_event_cb_t cb)
+{
+    lv_obj_t *r = w_rect(p, C_INSET, 20);
+    lv_obj_set_size(r, 420, LV_SIZE_CONTENT);
+    lv_obj_set_style_pad_all(r, 12, 0);
+    lv_obj_set_flex_flow(r, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(r, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_t *m = w_btn(r, "-", F_40, 76, false, cb, (void *)-1);
+    lv_obj_set_width(m, 76); w_bg(m, C_BTN);
+    lv_obj_add_event_cb(m, cb, LV_EVENT_LONG_PRESSED_REPEAT, (void *)-1);
+    lv_obj_t *v = w_label(r, F_36, C_TXT, "");
+    lv_obj_t *pl = w_btn(r, "+", F_40, 76, false, cb, (void *)1);
+    lv_obj_set_width(pl, 76); w_bg(pl, C_BTN);
+    lv_obj_add_event_cb(pl, cb, LV_EVENT_LONG_PRESSED_REPEAT, (void *)1);
+    return v;
+}
+
+static void build_solar(lv_obj_t *p)
+{
+    w_header(p, "Panel capacity", "Peak rating of all the panels together", NULL);
+    sv_w = stepper(p, on_pv_w);
+    lv_obj_t *h = w_header(p, "System efficiency", "Share of that rating that reaches the battery: heat, wiring and charger losses", NULL);
+    lv_obj_set_style_pad_top(h, 8, 0);
+    sv_eff = stepper(p, on_pv_eff);
+    sv_ex = w_label(p, F_16, C_MUTED, "");
+    lv_obj_set_style_pad_top(sv_ex, 8, 0);
+}
+
+static void refresh_solar(void)
+{
+    w_fmt(sv_w, "%u W", g_cfg.pv_w);
+    w_fmt(sv_eff, "%u %%", g_cfg.pv_eff);
+    w_fmt(sv_ex, "Expected yield: about %.1f kWh on a clear summer day, %.1f kWh when overcast",
+          weather_expected_kwh(6), weather_expected_kwh(1));
+}
+
 void ui_settings_create(void)
 {
     s_root = w_rect(lv_layer_top(), C_BG, 0);
@@ -528,7 +581,7 @@ void ui_settings_create(void)
     for (int i = 0; i < TAB_N; i++) {
         lv_obj_t *b = tabs[i] = w_rect(tl, C_BTN, 16);
         lv_obj_add_flag(b, LV_OBJ_FLAG_CLICKABLE);
-        lv_obj_set_size(b, LV_PCT(100), 60);   // seven tabs have to fit above the bottom edge
+        lv_obj_set_size(b, LV_PCT(100), 54);   // eight tabs have to fit above the bottom edge
         lv_obj_set_style_pad_hor(b, 20, 0);
         lv_obj_set_flex_flow(b, LV_FLEX_FLOW_ROW);
         lv_obj_set_flex_align(b, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
@@ -548,6 +601,7 @@ void ui_settings_create(void)
     build_tailnet(panels[TAB_TAILNET]);
     build_devices(panels[TAB_DEV]);
     build_heater(panels[TAB_HEATER]);
+    build_solar(panels[TAB_SOLAR]);
     build_time(panels[TAB_TIME]);
     build_display(panels[TAB_UNITS]);
     un_seg = w_seg(panels[TAB_UNITS], UNIT_MAP, 68, F_18, on_unit, NULL);
@@ -566,6 +620,7 @@ void ui_settings_refresh(const vd_model_t *m)
     lv_label_set_text(tab_meta[TAB_TAILNET], !tailnet_svc_enabled() ? "Off" : m->tn.state == TN_CONNECTED ? "On" : "...");
     w_fmt(tab_meta[TAB_DEV], "%d/%d", on, ROLE_COUNT);
     w_fmt(tab_meta[TAB_HEATER], "%+.1f", g_cfg.room_offset_x10 / 10.0f);
+    w_fmt(tab_meta[TAB_SOLAR], "%u W", g_cfg.pv_w);
     lv_label_set_text(tab_meta[TAB_TIME], g_cfg.h12 ? "12h" : "24h");
     static const char *TO_SHORT[] = { "30 s", "1 min", "5 min", "never" };
     w_fmt(tab_meta[TAB_UNITS], "%s, %s", ui_temp_unit(), TO_SHORT[g_cfg.screen_timeout & 3]);
@@ -579,6 +634,7 @@ void ui_settings_refresh(const vd_model_t *m)
         if (g_cfg.unit_f) w_fmt(ht_val, "%+.1f °F", o * 9 / 5); else w_fmt(ht_val, "%+.1f °C", o);
         break;
     }
+    case TAB_SOLAR: refresh_solar(); break;
     case TAB_TIME: refresh_time(m); break;
     case TAB_ABOUT: refresh_about(); break;
     default: refresh_display(); break;

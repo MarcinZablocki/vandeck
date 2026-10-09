@@ -54,11 +54,11 @@ const char *weather_text(int c)
     }
 }
 
-// Flat-mounted roof panels: irradiation (kWh/m2 on the horizontal) x array peak watts x a performance ratio for
-// heat, wiring, MPPT and the charger cutting back once the battery is full.
+// Flat-mounted roof panels: irradiation (kWh/m2 on the horizontal) x array peak watts x the system efficiency for
+// heat, wiring, MPPT and the charger cutting back once the battery is full (both set in Settings > Solar).
 float weather_expected_kwh(float rad_kwh_m2)
 {
-    return rad_kwh_m2 * CONFIG_VD_PV_ARRAY_W * CONFIG_VD_PV_PERF_PCT / 100.0f / 1000.0f;
+    return rad_kwh_m2 * g_cfg.pv_w * g_cfg.pv_eff / 100.0f / 1000.0f;
 }
 
 bool weather_set_location(float lat, float lon)

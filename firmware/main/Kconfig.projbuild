@@ -29,17 +29,19 @@ config VD_BATT_CAPACITY_AH
 
 config VD_PV_ARRAY_W
     int "Solar array peak power (W)"
+    range 20 2000
     default 220
     help
-        Used with the weather forecast's daily irradiation to estimate tomorrow's solar yield.
+        Starting value for Settings > Solar > Panel capacity, which the forecast's expected yield uses.
 
 config VD_PV_PERF_PCT
-    int "Solar performance ratio (%)"
+    int "Solar system efficiency (%)"
     range 30 100
     default 70
     help
-        Share of the panels' rated output that ends up in the battery on flat roof mounting: heat, wiring, MPPT
-        losses and the charger cutting back once the battery is full. Tune it if the forecast is off.
+        Starting value for Settings > Solar > System efficiency: the share of the panels' rated output that ends up
+        in the battery on flat roof mounting (heat, wiring, MPPT losses, the charger cutting back once the battery
+        is full). Tune it on the panel if the forecast is off.
 
 menu "Truma Combi (LIN)"
     choice VD_LIN_MODE
