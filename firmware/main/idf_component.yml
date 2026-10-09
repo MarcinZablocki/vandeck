@@ -1,0 +1,17 @@
+dependencies:
+  idf: ">=6.0"
+  lvgl/lvgl: "==9.4.0"
+  # Local copy of 2.9.0 with two patches (same as ESP32-Truma): DPI on_frame_buf_complete -> on_refresh_done for
+  # IDF 6.0, and a GT911 I2C read error reports "released" instead of aborting. Drop once upstream fixes both.
+  espressif/esp_lvgl_port:
+    version: "^2.6"
+    override_path: "../components/esp_lvgl_port"
+  espressif/esp_lcd_ek79007: "==2.0.2~1"
+  espressif/esp_lcd_touch_gt911: "==1.2.1"
+  # Same versions ESP32-Truma runs on this board; its C6 slave firmware is 2.12.x (host and slave must match major.minor).
+  espressif/esp_hosted: "==2.12.8"
+  espressif/esp_wifi_remote: "==1.6.0"
+  espressif/mdns: "^1.8"                    # vandeck.local for OTA uploads
+  valdanylchuk/breezybox: "^1.1.1"          # BusyBox-style shell on the USB serial port (needs the littlefs partition)
+  # Tailscale node on the panel (ts2021 control plane + WireGuard); see net/tailnet_svc.c. Needs IDF 6.x.
+  fugo101/microlink: "==3.2.0"

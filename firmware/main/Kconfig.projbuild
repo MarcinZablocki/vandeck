@@ -1,0 +1,147 @@
+menu "VanDeck"
+
+config VD_SIMULATE
+    bool "Show demo data for devices that are not paired"
+    default n
+
+config VD_BIG_FONTS
+    bool "Use generated large numeral fonts (main/fonts/vd_num_*.c)"
+    default n
+    help
+        Run tools/gen_fonts.sh first. Without it, big numbers fall back to Montserrat 48.
+
+config VD_OTA_KEY
+    string "OTA upload key"
+    default "vandeck"
+    help
+        Sent by tools/ota.sh in the X-OTA-Key header; uploads without it are refused. Change it from the default.
+
+config VD_TAILNET_HOSTNAME
+    string "Tailnet device name"
+    default "vandeck"
+    help
+        The name the panel registers with on your tailnet (MagicDNS: <name>.<tailnet>.ts.net). The tailnet itself
+        is switched on in Settings > Tailnet, or with the 'tailnet' console command.
+
+config VD_BATT_CAPACITY_AH
+    int "Capacity of one battery (Ah)"
+    default 160
+
+menu "Truma Combi (LIN)"
+    choice VD_LIN_MODE
+        prompt "LIN role"
+        default VD_LIN_MODE_INETBOX
+        config VD_LIN_MODE_INETBOX
+            bool "iNet box (CP Plus stays master)"
+            help
+                Emulate a Truma iNet box: the CP Plus keeps controlling the heater and this panel reads its status
+                and sends setting changes through it. Needs an "inet ready" CP Plus; run "PR SET" on it once so
+                it registers the iNet box.
+        config VD_LIN_MODE_SNIFF
+            bool "Sniff only (log frames, never transmit)"
+        config VD_LIN_MODE_MASTER
+            bool "Master, replacing the CP Plus (unfinished)"
+            help
+                Frame table not implemented. Never use with the CP Plus still on the bus.
+    endchoice
+    config VD_LIN_UART_NUM
+        int "UART port"
+        default 1
+    config VD_LIN_TX_GPIO
+        int "TX GPIO (to TJA1021/MCP2003 TXD)"
+        range -1 54
+        default 3
+        help
+            Expansion header IO3 (TX) and IO2 (RX), 3.3 V logic (the PCB has the two header pins swapped). TXD and RXD both need
+            external pull-ups (2.2-4.7k to 3.3 V) or received frames fail their checksum.
+    config VD_LIN_RX_GPIO
+        int "RX GPIO (from transceiver RXD)"
+        range -1 54
+        default 2
+    config VD_LIN_EN_GPIO
+        int "Transceiver SLP_N / CS GPIO (-1 = tied high)"
+        range -1 54
+        default -1
+    config VD_LIN_BAUD
+        int "Baud rate"
+        default 9600
+endmenu
+
+menu "KIB tank sensors"
+    choice VD_TANK_MODE
+        prompt "Sensor wiring"
+        default VD_TANK_MODE_NONE
+        config VD_TANK_MODE_NONE
+            bool "Not connected"
+        config VD_TANK_MODE_DIGITAL
+            bool "Digital probe lines (1/3, 2/3, F per tank)"
+        config VD_TANK_MODE_ADC
+            bool "One analog sender per tank"
+    endchoice
+    config VD_TANK_PWR_GPIO
+        int "Probe power enable GPIO (-1 = always powered)"
+        range -1 54
+        default -1
+    config VD_TANK_ACTIVE_LOW
+        bool "Digital lines are active low"
+        default y
+        depends on VD_TANK_MODE_DIGITAL
+    config VD_TANK_LPG_GPIO_1
+        int "LPG 1/3 GPIO"
+        range -1 54
+        default -1
+        depends on VD_TANK_MODE_DIGITAL
+    config VD_TANK_LPG_GPIO_2
+        int "LPG 2/3 GPIO"
+        range -1 54
+        default -1
+        depends on VD_TANK_MODE_DIGITAL
+    config VD_TANK_LPG_GPIO_3
+        int "LPG F GPIO"
+        range -1 54
+        default -1
+        depends on VD_TANK_MODE_DIGITAL
+    config VD_TANK_GREY_GPIO_1
+        int "Grey 1/3 GPIO"
+        range -1 54
+        default -1
+        depends on VD_TANK_MODE_DIGITAL
+    config VD_TANK_GREY_GPIO_2
+        int "Grey 2/3 GPIO"
+        range -1 54
+        default -1
+        depends on VD_TANK_MODE_DIGITAL
+    config VD_TANK_GREY_GPIO_3
+        int "Grey F GPIO"
+        range -1 54
+        default -1
+        depends on VD_TANK_MODE_DIGITAL
+    config VD_TANK_LPG_ADC_CH
+        int "LPG ADC1 channel (-1 = none)"
+        range -1 13
+        default -1
+        depends on VD_TANK_MODE_ADC
+    config VD_TANK_GREY_ADC_CH
+        int "Grey ADC1 channel (-1 = none)"
+        range -1 13
+        default -1
+        depends on VD_TANK_MODE_ADC
+    config VD_TANK_ADC_T1
+        int "Threshold for 1/3 (mV)"
+        default 800
+        depends on VD_TANK_MODE_ADC
+    config VD_TANK_ADC_T2
+        int "Threshold for 2/3 (mV)"
+        default 1600
+        depends on VD_TANK_MODE_ADC
+    config VD_TANK_ADC_T3
+        int "Threshold for F (mV)"
+        default 2400
+        depends on VD_TANK_MODE_ADC
+    config VD_TANK_ADC_INVERT
+        bool "Lower voltage means fuller (thresholds descending)"
+        default n
+        depends on VD_TANK_MODE_ADC
+endmenu
+
+endmenu

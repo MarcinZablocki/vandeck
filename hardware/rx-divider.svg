@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 560" font-family="Helvetica,Arial,sans-serif" font-size="13">
+<rect width="920" height="560" fill="#fff"/>
+<style>.t{fill:#222}.m{fill:#666;font-size:11px}.h{font-size:16px;font-weight:bold;fill:#222}.bx{fill:#f4f4f4;stroke:#222;stroke-width:1.6}
+.w{stroke:#222;stroke-width:2;fill:none}.r{fill:#fff;stroke:#222;stroke-width:1.8}.d{fill:#222}</style>
+<text x="30" y="32" class="h">RX level divider (module RX to CrowPanel IO3)</text>
+<text x="30" y="52" class="m">Resistors only. The module's own pull-up sits in the chain, so the lower resistor has to be large.</text>
+
+<!-- module -->
+<rect x="30" y="90" width="230" height="300" rx="6" class="bx"/>
+<text x="145" y="80" text-anchor="middle" class="h">LINTTL3 module</text>
+<text x="46" y="118" class="m">4.8 V rail (on-board regulator)</text>
+<line x1="110" y1="130" x2="110" y2="150" class="w" stroke-dasharray="4 4"/>
+<rect x="100" y="150" width="20" height="50" class="r" stroke-dasharray="4 3"/>
+<text x="130" y="170" class="m">R pull-up</text><text x="130" y="184" class="m">on module,</text><text x="130" y="198" class="m">about 4.7k-10k (unknown)</text>
+<line x1="110" y1="200" x2="110" y2="260" class="w" stroke-dasharray="4 4"/>
+<circle cx="110" cy="260" r="4" class="d"/>
+<line x1="110" y1="260" x2="260" y2="260" class="w"/>
+<text x="46" y="256" class="t">RX out</text>
+<text x="46" y="296" class="m">TJA1021 pulls this line low</text><text x="46" y="310" class="m">(open drain), the pull-up</text><text x="46" y="324" class="m">makes the high level</text>
+<circle cx="260" cy="260" r="5" class="d"/>
+
+<!-- R1 -->
+<line x1="265" y1="260" x2="350" y2="260" class="w"/>
+<rect x="350" y="248" width="70" height="24" class="r"/><text x="385" y="265" text-anchor="middle" class="t">R1 1k</text>
+<text x="385" y="238" text-anchor="middle" class="m">protects IO3</text>
+<line x1="420" y1="260" x2="560" y2="260" class="w"/>
+<circle cx="500" cy="260" r="4" class="d"/>
+
+<!-- R2 to GND -->
+<line x1="500" y1="260" x2="500" y2="310" class="w"/>
+<rect x="488" y="310" width="24" height="70" class="r"/><text x="526" y="340" class="t">R2</text><text x="526" y="357" class="t">10k or 22k</text>
+<line x1="500" y1="380" x2="500" y2="410" class="w"/>
+<line x1="486" y1="410" x2="514" y2="410" class="w"/><line x1="491" y1="416" x2="509" y2="416" class="w"/><line x1="496" y1="422" x2="504" y2="422" class="w"/>
+<text x="500" y="440" text-anchor="middle" class="m">GND (common)</text>
+
+<!-- CrowPanel -->
+<rect x="640" y="190" width="240" height="140" rx="6" class="bx"/>
+<text x="760" y="180" text-anchor="middle" class="h">CrowPanel</text>
+<text x="660" y="264" class="t">IO3 (RX)</text>
+<circle cx="640" cy="260" r="5" class="d"/>
+<line x1="560" y1="260" x2="635" y2="260" class="w"/>
+
+<!-- measure callout -->
+<rect x="410" y="100" width="230" height="86" rx="6" fill="#fff8e1" stroke="#c9a000"/>
+<text x="525" y="124" text-anchor="middle" class="t" font-weight="bold">Measure at the middle node</text>
+<text x="525" y="144" text-anchor="middle" class="t">module powered, IO3 wire NOT connected</text>
+<text x="525" y="164" text-anchor="middle" class="t">must read 2.5 V to 3.3 V</text>
+<line x1="500" y1="186" x2="500" y2="256" stroke="#c9a000" stroke-width="2"/>
+
+<!-- table -->
+<text x="30" y="470" class="h">Pick R2 from the module's pull-up (R1 stays 1k)</text>
+<g class="t">
+<text x="30" y="494">Pull-up about 4.7k:  R2 = 10k  ->  IO3 about 3.1 V</text>
+<text x="30" y="514">Pull-up about 10k:   R2 = 22k  ->  IO3 about 3.2 V</text>
+<text x="30" y="534">If the node reads under 2.5 V, raise R2. Over 3.3 V, lower it.</text></g>
+<text x="520" y="494" class="m">Voltage = 4.8 V x R2 / (pull-up + R1 + R2)</text>
+<text x="520" y="514" class="m">TX is not covered by this divider: use a BSS138 shifter channel for it.</text>
+</svg>

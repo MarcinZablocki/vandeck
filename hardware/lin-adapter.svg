@@ -1,0 +1,197 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 740" font-family="Helvetica,Arial,sans-serif" font-size="12">
+<rect width="900" height="700" fill="#fff"/>
+<style>
+.w{stroke:#222;stroke-width:1.6;fill:none}.b{stroke:#222;stroke-width:1.6;fill:#fafafa}.t{fill:#222}.m{fill:#666;font-size:11px}.h{font-size:15px;font-weight:bold;fill:#222}
+.p{stroke:#222;stroke-width:1.6;fill:#222}.hole{fill:#c9a24a}.rm{fill:none;stroke:#c33;stroke-width:2}
+</style>
+<text x="30" y="30" class="h">LIN adapter for CrowPanel P4 - schematic</text>
+<text x="30" y="48" class="m">Slave node (iNet box emulation). 3.3 V logic from the CrowPanel header; 12 V only feeds the transceiver's VBAT.</text>
+
+<!-- J1 header -->
+<rect x="30" y="90" width="90" height="250" class="b"/><text x="45" y="82" class="t">J1 (CrowPanel header)</text>
+<text x="40" y="114" class="t">3V3</text><line x1="120" y1="110" x2="150" y2="110" class="w"/><text x="154" y="114" class="t">3V3</text>
+<text x="40" y="174" class="t">IO3 (RX)</text><line x1="120" y1="170" x2="400" y2="170" class="w"/>
+<text x="40" y="264" class="t">IO2 (TX)</text><line x1="120" y1="260" x2="400" y2="260" class="w"/>
+<text x="40" y="324" class="t">GND</text><line x1="120" y1="320" x2="150" y2="320" class="w"/><line x1="150" y1="320" x2="150" y2="330" class="w"/><line x1="140" y1="330" x2="160" y2="330" class="w"/>
+
+<!-- R4 pull-up on RXD -->
+<circle cx="300" cy="170" r="3" class="p"/><line x1="300" y1="170" x2="300" y2="150" class="w"/><rect x="293" y="120" width="14" height="30" class="b"/><line x1="300" y1="120" x2="300" y2="100" class="w"/><text x="300" y="92" text-anchor="middle" class="t">3V3</text><text x="314" y="139" class="t">R4 4.7k</text>
+<!-- R5 pull-up on TXD -->
+<circle cx="230" cy="260" r="3" class="p"/><line x1="230" y1="260" x2="230" y2="290" class="w"/><rect x="223" y="290" width="14" height="30" class="b"/><line x1="230" y1="320" x2="230" y2="340" class="w"/><text x="230" y="356" text-anchor="middle" class="t">3V3</text><text x="244" y="309" class="t">R5 4.7k</text>
+
+<!-- U1 -->
+<rect x="400" y="150" width="120" height="130" class="b"/><text x="460" y="143" text-anchor="middle" class="t">U1 TJA1021 (SO8 on DIP adapter)</text>
+<text x="408" y="174" class="t">1 RXD</text><text x="408" y="204" class="t">2 SLP_N</text><text x="408" y="234" class="t">3 WAKE_N</text><text x="408" y="264" class="t">4 TXD</text>
+<text x="512" y="174" text-anchor="end" class="t">INH 8</text><text x="512" y="204" text-anchor="end" class="t">VBAT 7</text><text x="512" y="234" text-anchor="end" class="t">LIN 6</text><text x="512" y="264" text-anchor="end" class="t">GND 5</text>
+<!-- SLP_N -->
+<line x1="400" y1="200" x2="365" y2="200" class="w"/><text x="360" y="204" text-anchor="end" class="t">3V3</text>
+<!-- WAKE_N via R2 -->
+<line x1="400" y1="230" x2="365" y2="230" class="w"/><rect x="335" y="223" width="30" height="14" class="b"/><line x1="335" y1="230" x2="320" y2="230" class="w"/><text x="316" y="234" text-anchor="end" class="t">VBAT</text><text x="350" y="251" text-anchor="middle" class="t">R2 10k</text>
+<!-- INH NC -->
+<line x1="520" y1="170" x2="545" y2="170" class="w"/><text x="550" y="174" class="m">NC</text>
+<!-- GND pin5 -->
+<line x1="520" y1="260" x2="550" y2="260" class="w"/><line x1="550" y1="260" x2="550" y2="272" class="w"/><line x1="540" y1="272" x2="560" y2="272" class="w"/>
+<!-- VBAT -->
+<line x1="520" y1="200" x2="610" y2="200" class="w"/><line x1="610" y1="200" x2="610" y2="110" class="w"/><circle cx="610" cy="200" r="3" class="p"/>
+<line x1="610" y1="110" x2="705" y2="110" class="w"/><text x="560" y="194" class="t">VBAT</text>
+<circle cx="650" cy="110" r="3" class="p"/><line x1="650" y1="110" x2="650" y2="140" class="w"/><line x1="638" y1="140" x2="662" y2="140" class="w"/><line x1="638" y1="148" x2="662" y2="148" class="w"/><line x1="650" y1="148" x2="650" y2="165" class="w"/><line x1="640" y1="165" x2="660" y2="165" class="w"/><text x="668" y="148" class="t">C1 100n</text>
+<!-- D1 -->
+<polygon points="730,100 730,120 705,110" class="b"/><line x1="705" y1="100" x2="705" y2="120" class="w"/><line x1="730" y1="110" x2="760" y2="110" class="w"/><text x="706" y="92" class="t">D1 SS14</text>
+<!-- TB1 -->
+<rect x="760" y="90" width="70" height="70" class="b"/><text x="768" y="114" class="t">12V in</text><text x="768" y="144" class="t">GND</text><text x="760" y="82" class="t">TB1</text>
+<line x1="760" y1="140" x2="740" y2="140" class="w"/><line x1="740" y1="140" x2="740" y2="152" class="w"/><line x1="730" y1="152" x2="750" y2="152" class="w"/>
+<!-- LIN -->
+<line x1="520" y1="230" x2="760" y2="230" class="w"/><circle cx="700" cy="230" r="3" class="p"/><line x1="700" y1="230" x2="700" y2="250" class="w"/><line x1="688" y1="250" x2="712" y2="250" class="w"/><line x1="688" y1="258" x2="712" y2="258" class="w"/><line x1="700" y1="258" x2="700" y2="275" class="w"/><line x1="690" y1="275" x2="710" y2="275" class="w"/><text x="640" y="268" class="t">C2 220p</text>
+<rect x="760" y="210" width="70" height="70" class="b"/><text x="768" y="234" class="t">LIN</text><text x="768" y="264" class="t">GND</text><text x="760" y="202" class="t">TB2</text>
+<line x1="760" y1="260" x2="740" y2="260" class="w"/><line x1="740" y1="260" x2="740" y2="272" class="w"/><line x1="730" y1="272" x2="750" y2="272" class="w"/>
+<text x="30" y="378" class="m">All grounds common. R4/R5 are the required 3.3 V pull-ups on RXD/TXD. Optional: SMBJ33CA TVS across LIN-GND.</text>
+
+<!-- Board placement -->
+<text x="30" y="410" class="h">Protoboard placement (14 x 8 holes, 2.54 mm = about 36 x 20 mm, component side)</text>
+<rect x="40" y="456" width="404" height="250" rx="6" fill="#e9f0dc" stroke="#7a8a5a"/>
+<circle cx="60" cy="490" r="3" class="hole"/>
+<circle cx="60" cy="518" r="3" class="hole"/>
+<circle cx="60" cy="546" r="3" class="hole"/>
+<circle cx="60" cy="574" r="3" class="hole"/>
+<circle cx="60" cy="602" r="3" class="hole"/>
+<circle cx="60" cy="630" r="3" class="hole"/>
+<circle cx="60" cy="658" r="3" class="hole"/>
+<circle cx="60" cy="686" r="3" class="hole"/>
+<circle cx="88" cy="490" r="3" class="hole"/>
+<circle cx="88" cy="518" r="3" class="hole"/>
+<circle cx="88" cy="546" r="3" class="hole"/>
+<circle cx="88" cy="574" r="3" class="hole"/>
+<circle cx="88" cy="602" r="3" class="hole"/>
+<circle cx="88" cy="630" r="3" class="hole"/>
+<circle cx="88" cy="658" r="3" class="hole"/>
+<circle cx="88" cy="686" r="3" class="hole"/>
+<circle cx="116" cy="490" r="3" class="hole"/>
+<circle cx="116" cy="518" r="3" class="hole"/>
+<circle cx="116" cy="546" r="3" class="hole"/>
+<circle cx="116" cy="574" r="3" class="hole"/>
+<circle cx="116" cy="602" r="3" class="hole"/>
+<circle cx="116" cy="630" r="3" class="hole"/>
+<circle cx="116" cy="658" r="3" class="hole"/>
+<circle cx="116" cy="686" r="3" class="hole"/>
+<circle cx="144" cy="490" r="3" class="hole"/>
+<circle cx="144" cy="518" r="3" class="hole"/>
+<circle cx="144" cy="546" r="3" class="hole"/>
+<circle cx="144" cy="574" r="3" class="hole"/>
+<circle cx="144" cy="602" r="3" class="hole"/>
+<circle cx="144" cy="630" r="3" class="hole"/>
+<circle cx="144" cy="658" r="3" class="hole"/>
+<circle cx="144" cy="686" r="3" class="hole"/>
+<circle cx="172" cy="490" r="3" class="hole"/>
+<circle cx="172" cy="518" r="3" class="hole"/>
+<circle cx="172" cy="546" r="3" class="hole"/>
+<circle cx="172" cy="574" r="3" class="hole"/>
+<circle cx="172" cy="602" r="3" class="hole"/>
+<circle cx="172" cy="630" r="3" class="hole"/>
+<circle cx="172" cy="658" r="3" class="hole"/>
+<circle cx="172" cy="686" r="3" class="hole"/>
+<circle cx="200" cy="490" r="3" class="hole"/>
+<circle cx="200" cy="518" r="3" class="hole"/>
+<circle cx="200" cy="546" r="3" class="hole"/>
+<circle cx="200" cy="574" r="3" class="hole"/>
+<circle cx="200" cy="602" r="3" class="hole"/>
+<circle cx="200" cy="630" r="3" class="hole"/>
+<circle cx="200" cy="658" r="3" class="hole"/>
+<circle cx="200" cy="686" r="3" class="hole"/>
+<circle cx="228" cy="490" r="3" class="hole"/>
+<circle cx="228" cy="518" r="3" class="hole"/>
+<circle cx="228" cy="546" r="3" class="hole"/>
+<circle cx="228" cy="574" r="3" class="hole"/>
+<circle cx="228" cy="602" r="3" class="hole"/>
+<circle cx="228" cy="630" r="3" class="hole"/>
+<circle cx="228" cy="658" r="3" class="hole"/>
+<circle cx="228" cy="686" r="3" class="hole"/>
+<circle cx="256" cy="490" r="3" class="hole"/>
+<circle cx="256" cy="518" r="3" class="hole"/>
+<circle cx="256" cy="546" r="3" class="hole"/>
+<circle cx="256" cy="574" r="3" class="hole"/>
+<circle cx="256" cy="602" r="3" class="hole"/>
+<circle cx="256" cy="630" r="3" class="hole"/>
+<circle cx="256" cy="658" r="3" class="hole"/>
+<circle cx="256" cy="686" r="3" class="hole"/>
+<circle cx="284" cy="490" r="3" class="hole"/>
+<circle cx="284" cy="518" r="3" class="hole"/>
+<circle cx="284" cy="546" r="3" class="hole"/>
+<circle cx="284" cy="574" r="3" class="hole"/>
+<circle cx="284" cy="602" r="3" class="hole"/>
+<circle cx="284" cy="630" r="3" class="hole"/>
+<circle cx="284" cy="658" r="3" class="hole"/>
+<circle cx="284" cy="686" r="3" class="hole"/>
+<circle cx="312" cy="490" r="3" class="hole"/>
+<circle cx="312" cy="518" r="3" class="hole"/>
+<circle cx="312" cy="546" r="3" class="hole"/>
+<circle cx="312" cy="574" r="3" class="hole"/>
+<circle cx="312" cy="602" r="3" class="hole"/>
+<circle cx="312" cy="630" r="3" class="hole"/>
+<circle cx="312" cy="658" r="3" class="hole"/>
+<circle cx="312" cy="686" r="3" class="hole"/>
+<circle cx="340" cy="490" r="3" class="hole"/>
+<circle cx="340" cy="518" r="3" class="hole"/>
+<circle cx="340" cy="546" r="3" class="hole"/>
+<circle cx="340" cy="574" r="3" class="hole"/>
+<circle cx="340" cy="602" r="3" class="hole"/>
+<circle cx="340" cy="630" r="3" class="hole"/>
+<circle cx="340" cy="658" r="3" class="hole"/>
+<circle cx="340" cy="686" r="3" class="hole"/>
+<circle cx="368" cy="490" r="3" class="hole"/>
+<circle cx="368" cy="518" r="3" class="hole"/>
+<circle cx="368" cy="546" r="3" class="hole"/>
+<circle cx="368" cy="574" r="3" class="hole"/>
+<circle cx="368" cy="602" r="3" class="hole"/>
+<circle cx="368" cy="630" r="3" class="hole"/>
+<circle cx="368" cy="658" r="3" class="hole"/>
+<circle cx="368" cy="686" r="3" class="hole"/>
+<circle cx="396" cy="490" r="3" class="hole"/>
+<circle cx="396" cy="518" r="3" class="hole"/>
+<circle cx="396" cy="546" r="3" class="hole"/>
+<circle cx="396" cy="574" r="3" class="hole"/>
+<circle cx="396" cy="602" r="3" class="hole"/>
+<circle cx="396" cy="630" r="3" class="hole"/>
+<circle cx="396" cy="658" r="3" class="hole"/>
+<circle cx="396" cy="686" r="3" class="hole"/>
+<circle cx="424" cy="490" r="3" class="hole"/>
+<circle cx="424" cy="518" r="3" class="hole"/>
+<circle cx="424" cy="546" r="3" class="hole"/>
+<circle cx="424" cy="574" r="3" class="hole"/>
+<circle cx="424" cy="602" r="3" class="hole"/>
+<circle cx="424" cy="630" r="3" class="hole"/>
+<circle cx="424" cy="658" r="3" class="hole"/>
+<circle cx="424" cy="686" r="3" class="hole"/>
+<rect x="107" y="481" width="18" height="18" fill="#222"/><text x="116" y="476" text-anchor="middle" font-size="10" class="t">3V3</text>
+<rect x="135" y="481" width="18" height="18" fill="#222"/><text x="144" y="476" text-anchor="middle" font-size="10" class="t">5V</text>
+<line x1="135" y1="481" x2="153" y2="499" class="rm"/><line x1="153" y1="481" x2="135" y2="499" class="rm"/>
+<rect x="163" y="481" width="18" height="18" fill="#222"/><text x="172" y="476" text-anchor="middle" font-size="10" class="t">5V</text>
+<line x1="163" y1="481" x2="181" y2="499" class="rm"/><line x1="181" y1="481" x2="163" y2="499" class="rm"/>
+<rect x="191" y="481" width="18" height="18" fill="#222"/><text x="200" y="476" text-anchor="middle" font-size="10" class="t">GND</text>
+<rect x="219" y="481" width="18" height="18" fill="#222"/><text x="228" y="476" text-anchor="middle" font-size="10" class="t">IO2</text>
+<rect x="247" y="481" width="18" height="18" fill="#222"/><text x="256" y="476" text-anchor="middle" font-size="10" class="t">IO3</text>
+<text x="289.59999999999997" y="494" font-size="11" class="t">J1 header</text>
+<rect x="190" y="536" width="104" height="104" rx="4" fill="#444" opacity=".85"/>
+<text x="200" y="550" text-anchor="middle" font-size="10" fill="#fff">1</text><text x="200" y="634" text-anchor="middle" font-size="10" fill="#fff">8</text>
+<text x="228" y="550" text-anchor="middle" font-size="10" fill="#fff">2</text><text x="228" y="634" text-anchor="middle" font-size="10" fill="#fff">7</text>
+<text x="256" y="550" text-anchor="middle" font-size="10" fill="#fff">3</text><text x="256" y="634" text-anchor="middle" font-size="10" fill="#fff">6</text>
+<text x="284" y="550" text-anchor="middle" font-size="10" fill="#fff">4</text><text x="284" y="634" text-anchor="middle" font-size="10" fill="#fff">5</text>
+<text x="242.0" y="592.0" text-anchor="middle" font-size="11" fill="#fff">U1 DIP8</text>
+<rect x="80" y="539" width="72" height="14" rx="3" fill="#d9a066" stroke="#333"/><text x="116.0" y="550" text-anchor="middle" font-size="9" class="t">R4 4.7k</text>
+<rect x="80" y="567" width="72" height="14" rx="3" fill="#d9a066" stroke="#333"/><text x="116.0" y="578" text-anchor="middle" font-size="9" class="t">R5 4.7k</text>
+<rect x="80" y="595" width="72" height="14" rx="3" fill="#d9a066" stroke="#333"/><text x="116.0" y="606" text-anchor="middle" font-size="9" class="t">R2 10k</text>
+<rect x="332" y="539" width="72" height="14" rx="3" fill="#9aa" stroke="#333"/><text x="368.0" y="550" text-anchor="middle" font-size="9" class="t">D1 SS14</text>
+<rect x="332" y="567" width="72" height="14" rx="3" fill="#c9c" stroke="#333"/><text x="368.0" y="578" text-anchor="middle" font-size="9" class="t">C1 100n</text>
+<rect x="332" y="595" width="72" height="14" rx="3" fill="#c9c" stroke="#333"/><text x="368.0" y="606" text-anchor="middle" font-size="9" class="t">C2 220p</text>
+<rect x="158" y="670" width="56" height="32" rx="3" fill="#3a7bd5"/><text x="186.0" y="664" text-anchor="middle" font-size="11" class="t">TB2</text>
+<text x="172" y="690" text-anchor="middle" font-size="9" fill="#fff">LIN</text>
+<text x="200" y="690" text-anchor="middle" font-size="9" fill="#fff">GND</text>
+<rect x="326" y="670" width="56" height="32" rx="3" fill="#3a7bd5"/><text x="354.0" y="664" text-anchor="middle" font-size="11" class="t">TB1</text>
+<text x="340" y="690" text-anchor="middle" font-size="9" fill="#fff">12V</text>
+<text x="368" y="690" text-anchor="middle" font-size="9" fill="#fff">GND</text><g class="t">
+<text x="500" y="470" class="h">Wiring notes</text>
+<text x="500" y="494">1. J1 plugs into 3V3 / GND / IO2 / IO3 on the CrowPanel</text><text x="500" y="510">    expansion header (confirm pin order on your board).</text>
+<text x="500" y="534">2. Pull the two 5V pins out of the strip so 5 V never</text><text x="500" y="550">    reaches this board.</text>
+<text x="500" y="574">3. TB1: van 12 V (fused) and GND. TB2: LIN wire and GND.</text>
+<text x="500" y="598">4. Under the board: 3V3 rail to R4, R5, U1 pin 2; GND rail to</text><text x="500" y="614">    J1, TB1, TB2, U1 pin 5, C1, C2. U1 pin 8 (INH) unconnected.</text>
+<text x="500" y="638">5. Placement is a suggestion. Check continuity before power.</text>
+</g></svg>

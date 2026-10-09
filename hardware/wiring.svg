@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 660" font-family="Helvetica,Arial,sans-serif" font-size="13">
+<rect width="960" height="660" fill="#fff"/>
+<style>.t{fill:#222}.m{fill:#666;font-size:11px}.h{font-size:16px;font-weight:bold;fill:#222}.bx{fill:#f4f4f4;stroke:#222;stroke-width:1.6}.pin{fill:#222}
+.w{stroke-width:3;fill:none;stroke-linecap:round}.r{fill:#fff;stroke:#222;stroke-width:1.8}</style>
+<text x="30" y="32" class="h">PCB wiring: CrowPanel header, LINTTL3 module, van (header pins IO2/IO3 swapped)</text>
+<text x="30" y="52" class="m">Firmware: TX = GPIO 3, RX = GPIO 2. Flash the build with CONFIG_VD_LIN_TX_GPIO=3 and CONFIG_VD_LIN_RX_GPIO=2 for this PCB.</text>
+
+<!-- CrowPanel -->
+<rect x="30" y="90" width="150" height="280" rx="6" class="bx"/>
+<text x="105" y="80" text-anchor="middle" class="h">CrowPanel</text>
+<text x="105" y="110" text-anchor="middle" class="m">expansion header</text>
+<g class="t"><text x="44" y="144">GND</text><text x="44" y="204">IO3 (TX)</text><text x="44" y="264">3V3</text><text x="44" y="324">IO2 (RX)</text></g>
+<g class="pin"><circle cx="180" cy="140" r="5"/><circle cx="180" cy="200" r="5"/><circle cx="180" cy="260" r="5"/><circle cx="180" cy="320" r="5"/></g>
+
+<!-- Module -->
+<rect x="500" y="90" width="150" height="280" rx="6" class="bx"/>
+<text x="575" y="80" text-anchor="middle" class="h">LINTTL3 module</text>
+<text x="575" y="230" text-anchor="middle" class="t">TJA1021</text>
+<g class="t"><text x="514" y="144">GND</text><text x="514" y="204">TX</text><text x="514" y="264">SLP</text><text x="514" y="324">RX</text>
+<text x="636" y="144" text-anchor="end">GND</text><text x="636" y="204" text-anchor="end">LIN</text><text x="636" y="264" text-anchor="end">INH</text><text x="636" y="324" text-anchor="end">VIN</text></g>
+<g class="pin"><circle cx="500" cy="140" r="5"/><circle cx="500" cy="200" r="5"/><circle cx="500" cy="260" r="5"/><circle cx="500" cy="320" r="5"/>
+<circle cx="650" cy="140" r="5"/><circle cx="650" cy="200" r="5"/><circle cx="650" cy="260" r="5"/><circle cx="650" cy="320" r="5"/></g>
+
+<!-- GND -->
+<path d="M185 140 H495" class="w" stroke="#111"/><text x="340" y="132" text-anchor="middle" class="m">GND</text>
+<!-- TX with diode: cathode (band) at the CrowPanel side -->
+<path d="M185 200 H270" class="w" stroke="#2e9e44"/>
+<polygon points="340,188 340,212 305,200" class="r"/><line x1="305" y1="186" x2="305" y2="214" stroke="#222" stroke-width="3"/>
+<path d="M340 200 H495" class="w" stroke="#2e9e44"/>
+<path d="M270 200 H305" class="w" stroke="#2e9e44"/>
+<text x="322" y="176" text-anchor="middle" class="t">1N4002/1N4005</text>
+<text x="322" y="230" text-anchor="middle" class="m">band (cathode) toward IO3</text>
+<text x="420" y="192" class="m">TX</text>
+<!-- SLP -->
+<path d="M185 260 H495" class="w" stroke="#e08a1e"/><text x="340" y="252" text-anchor="middle" class="m">3V3 to SLP</text>
+<!-- RX divider -->
+<path d="M495 320 H410" class="w" stroke="#2a6fd6"/><rect x="340" y="308" width="70" height="24" class="r"/><text x="375" y="325" text-anchor="middle" class="t">1k R1</text>
+<path d="M340 320 H185" class="w" stroke="#2a6fd6"/>
+<circle cx="260" cy="320" r="5" class="pin"/>
+<path d="M260 320 V350" class="w" stroke="#2a6fd6"/><rect x="248" y="350" width="24" height="60" class="r"/><text x="282" y="378" class="t">R2</text><text x="282" y="394" class="t">10k</text>
+<path d="M260 410 V430" class="w" stroke="#111"/>
+<line x1="246" y1="430" x2="274" y2="430" stroke="#111" stroke-width="2"/><line x1="251" y1="436" x2="269" y2="436" stroke="#111" stroke-width="2"/><line x1="256" y1="442" x2="264" y2="442" stroke="#111" stroke-width="2"/>
+<text x="260" y="460" text-anchor="middle" class="m">to GND</text>
+<text x="360" y="362" class="m">RX divider (R1 + R2)</text>
+
+<!-- Van -->
+<rect x="790" y="90" width="150" height="280" rx="6" class="bx"/>
+<text x="865" y="80" text-anchor="middle" class="h">Van / Truma</text>
+<g class="t"><text x="804" y="144">GND (battery,</text><text x="804" y="158">RJ12 pin 5)</text><text x="804" y="204">LIN (RJ12 pin 3)</text><text x="804" y="264">not connected</text><text x="804" y="324">+12 V fused</text></g>
+<g class="pin"><circle cx="790" cy="140" r="5"/><circle cx="790" cy="200" r="5"/><circle cx="790" cy="320" r="5"/></g>
+<path d="M655 140 H785" class="w" stroke="#111"/>
+<path d="M655 200 H785" class="w" stroke="#d9b800"/>
+<path d="M655 320 H785" class="w" stroke="#d33"/>
+<path d="M655 260 H710" class="w" stroke="#999" stroke-dasharray="4 5"/><text x="716" y="264" class="m">INH open</text>
+
+<!-- Notes -->
+<text x="30" y="500" class="h">Parts and checks</text>
+<g class="t">
+<text x="30" y="522">D1: 1N4002 or 1N4005. Band (cathode) toward the CrowPanel IO3 pin, anode to the module TX terminal.</text>
+<text x="30" y="540">R1 = 1 kΩ in series from module RX, R2 = 10 kΩ from the IO2 node to GND. Do not wire module RX straight to IO2 (4.8 V).</text>
+<text x="30" y="558">SLP tied to 3V3 (CONFIG_VD_LIN_EN_GPIO stays -1). All grounds common: CrowPanel, both module GND terminals, battery, RJ12 pin 5.</text>
+<text x="30" y="576">LIN is RJ12 pin 3, GND is pin 5, on the splitter between the Combi and the CP Plus. Never use the CrowPanel 5V pins.</text>
+<text x="30" y="594">Before powering the PCB: continuity IO3 to module TX (through the diode), IO2 node to module RX (through R1), GND to GND.</text>
+<text x="30" y="612">After first power: the log should show "registered with the CP Plus" and then "status:" lines.</text></g>
+</svg>

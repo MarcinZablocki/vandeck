@@ -1,0 +1,131 @@
+CONFIG_IDF_TARGET="esp32p4"
+
+# This board carries early (ECO2, v1.x) P4 silicon. IDF 6.0 defaults to rev 3.1+, which won't boot on it.
+CONFIG_ESP32P4_SELECTS_REV_LESS_V3=y
+CONFIG_ESP32P4_REV_MIN_1=y
+
+# The "Program" USB-C port is a CH341 bridge on UART0.
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+
+CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
+CONFIG_SPI_FLASH_SUPPORT_BOYA_CHIP=y
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# OTA: a new image boots as "pending verify" and the bootloader rolls back to the previous one if it resets before
+# the app marks itself valid (main.c, after it has run healthily for a while). The bootloader must stay under its
+# 24 KB slot below the partition table, so its own logging is trimmed to warnings.
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+CONFIG_BOOTLOADER_LOG_LEVEL_WARN=y
+CONFIG_COMPILER_OPTIMIZATION_PERF=y
+CONFIG_FREERTOS_HZ=1000
+# Sockets: HTTP server (OTA) + console + mDNS + SNTP + Starlink client + the tailnet (microlink: control plane,
+# DERP, DISCO/STUN, WireGuard UDP); the default 10 runs out.
+CONFIG_LWIP_MAX_SOCKETS=24
+# Small TCP segments: on a marginal link (the panel at -85 dBm) its large Wi-Fi frames fail outright while
+# ~500-byte ones mostly get through, so long console output / HTTP replies would otherwise stall.
+CONFIG_LWIP_TCP_MSS=536
+# Per-task CPU accounting for the console's "tasks" command.
+CONFIG_FREERTOS_USE_TRACE_FACILITY=y
+CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS=y
+CONFIG_FREERTOS_VTASKLIST_INCLUDE_COREID=y
+
+# 32 MB PSRAM
+CONFIG_SPIRAM=y
+CONFIG_IDF_EXPERIMENTAL_FEATURES=y
+CONFIG_SPIRAM_SPEED_200M=y
+# Run code and rodata from PSRAM (copied there at boot). Without it every flash write (NVS saves, BLE bonds,
+# OTA) disables the external-memory cache for its duration, and the panel briefly flashes blue. ESP32-Truma saw
+# panel glitches from the extra PSRAM traffic with XIP at L2=128 KB, so watch for that if the UI gets busier.
+CONFIG_SPIRAM_XIP_FROM_PSRAM=y
+# 128 KB L2 (not 256) leaves internal DMA-capable RAM for the esp_hosted SDIO RX buffers.
+CONFIG_CACHE_L2_CACHE_128KB=y
+CONFIG_CACHE_L2_CACHE_LINE_128B=y
+
+# LVGL 9
+# LVGL allocates through malloc instead of its own 64 KB static pool. The pool would sit in internal RAM right where
+# esp_hosted's constructor needs ~48 KB of DMA-capable heap before the rest of RAM joins the heap, and it asserts.
+CONFIG_LV_USE_CLIB_MALLOC=y
+CONFIG_LV_USE_CLIB_STRING=y
+CONFIG_LV_USE_CLIB_SPRINTF=y
+# Let allocations above 2 KB go to PSRAM, keeping internal RAM for DMA (esp_hosted SDIO, NimBLE).
+CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=2048
+CONFIG_LV_COLOR_DEPTH_16=y
+CONFIG_LV_DEF_REFR_PERIOD=16
+CONFIG_LV_FONT_MONTSERRAT_14=y
+CONFIG_LV_FONT_MONTSERRAT_16=y
+CONFIG_LV_FONT_MONTSERRAT_18=y
+CONFIG_LV_FONT_MONTSERRAT_20=y
+CONFIG_LV_FONT_MONTSERRAT_22=y
+CONFIG_LV_FONT_MONTSERRAT_24=y
+CONFIG_LV_FONT_MONTSERRAT_26=y
+CONFIG_LV_FONT_MONTSERRAT_28=y
+CONFIG_LV_FONT_MONTSERRAT_30=y
+CONFIG_LV_FONT_MONTSERRAT_36=y
+CONFIG_LV_FONT_MONTSERRAT_40=y
+CONFIG_LV_FONT_MONTSERRAT_48=y
+CONFIG_LV_USE_KEYBOARD=y
+CONFIG_LV_USE_TEXTAREA=y
+CONFIG_LV_USE_SWITCH=y
+CONFIG_LV_USE_BUTTONMATRIX=y
+
+# Wi-Fi + BLE through the onboard ESP32-C6 (esp_hosted over SDIO), as run on this board by ESP32-Truma.
+# Board V1.1 is 4-bit with D0..D3 reversed vs V1.0 (17,16,15,14); the wrong mapping crash-loops the board
+# every ~15 s ("H_SDIO_DRV: failed to read registers"). esp_hosted 2.x names the pins per slot; the P4 uses slot 1.
+CONFIG_ESP_HOSTED_ENABLED=y
+CONFIG_ESP_HOSTED_SDIO_HOST_INTERFACE=y
+CONFIG_ESP_HOSTED_IDF_SLAVE_TARGET="esp32c6"
+CONFIG_ESP_HOSTED_SDIO_4_BIT_BUS=y
+CONFIG_ESP_HOSTED_SDIO_CLOCK_FREQ_KHZ=40000
+CONFIG_ESP_HOSTED_SDIO_SLOT_1=y
+CONFIG_ESP_HOSTED_PRIV_SDIO_PIN_CLK_SLOT_1=18
+CONFIG_ESP_HOSTED_PRIV_SDIO_PIN_CMD_SLOT_1=19
+CONFIG_ESP_HOSTED_PRIV_SDIO_PIN_D0_SLOT_1=17
+CONFIG_ESP_HOSTED_PRIV_SDIO_PIN_D1_4BIT_BUS_SLOT_1=16
+CONFIG_ESP_HOSTED_PRIV_SDIO_PIN_D2_4BIT_BUS_SLOT_1=15
+CONFIG_ESP_HOSTED_PRIV_SDIO_PIN_D3_4BIT_BUS_SLOT_1=14
+CONFIG_ESP_HOSTED_SDIO_GPIO_RESET_SLAVE=32
+# Leave CONFIG_ESP_HOSTED_MEMPOOL_PREFER_SPIRAM off: SDIO TX DMA from PSRAM times out under load on this board.
+CONFIG_ESP_WIFI_REMOTE_ENABLED=y
+CONFIG_ESP_WIFI_REMOTE_LIBRARY_HOSTED=y
+CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
+
+# NimBLE host on the P4, controller on the C6 (HCI over the hosted transport)
+CONFIG_BT_ENABLED=y
+CONFIG_BT_NIMBLE_ENABLED=y
+CONFIG_BT_CONTROLLER_DISABLED=y
+# Otherwise NimBLE defaults to a UART HCI on UART1 (clashes with LIN) and hides the hosted option.
+CONFIG_BT_NIMBLE_TRANSPORT_UART=n
+CONFIG_ESP_HOSTED_ENABLE_BT_NIMBLE=y
+CONFIG_ESP_HOSTED_NIMBLE_HCI_VHCI=y
+# Newer Victron devices use extended (BLE 5) advertising; a legacy-only scan misses them. All three are needed:
+# the event buffer must fit extended reports or they're dropped over the C6 VHCI link.
+CONFIG_BT_NIMBLE_EXT_ADV=y
+CONFIG_BT_NIMBLE_EXT_SCAN=y
+CONFIG_BT_NIMBLE_TRANSPORT_EVT_SIZE=257
+# NimBLE host memory in PSRAM; HCI buffers stay internal in the hosted transport.
+CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL=y
+# NimBLE's own INFO logging prints every GAP/GATT procedure (several a minute) into the shells; VanDeck logs
+# the BLE events that matter itself.
+CONFIG_BT_NIMBLE_LOG_LEVEL_WARNING=y
+
+# BreezyBox shell scripting: pipes (via temp files on the storage partition), variables, &&/||, globbing, quoting,
+# if/while/for, command substitution. Stack-hungry: the shell tasks get 16 KB (shell.c, log_svc.c).
+CONFIG_BREEZYBOX_SHELL_SCRIPTING=y
+CONFIG_BT_NIMBLE_ROLE_CENTRAL=y
+CONFIG_BT_NIMBLE_ROLE_OBSERVER=y
+CONFIG_BT_NIMBLE_ROLE_PERIPHERAL=n
+CONFIG_BT_NIMBLE_ROLE_BROADCASTER=n
+CONFIG_BT_NIMBLE_MAX_CONNECTIONS=3
+CONFIG_BT_NIMBLE_NVS_PERSIST=y
+
+# Tailnet (microlink, net/tailnet_svc.c). WireGuard decrypts on the lwIP tcpip thread, which the default 3 KB stack
+# can't hold; the Noise handshake and WireGuard need ChaCha20-Poly1305, and the extra mailbox depth absorbs bursts.
+CONFIG_LWIP_TCPIP_TASK_STACK_SIZE=6144
+CONFIG_LWIP_TCPIP_RECVMBOX_SIZE=64
+CONFIG_LWIP_IP4_REASSEMBLY=y
+CONFIG_MBEDTLS_CHACHA20_C=y
+CONFIG_MBEDTLS_POLY1305_C=y
+CONFIG_MBEDTLS_CHACHAPOLY_C=y
+CONFIG_MBEDTLS_HKDF_C=y

@@ -1,0 +1,258 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 640" font-family="Helvetica,Arial,sans-serif" font-size="13"><rect width="900" height="640" fill="#fff"/>
+<style>.t{fill:#222}.m{fill:#666;font-size:11px}.h{font-size:16px;font-weight:bold;fill:#222}.hole{fill:#8c8c80}.w{stroke-width:4;fill:none;stroke-linecap:round}</style>
+<text x="30" y="30" class="h">Breadboard: signals + common ground (CrowPanel, LINTTL3, battery, LIN line)</text>
+<text x="30" y="50" class="m">Holes A-E in one column are connected. Each rail row is connected along its length. Only GND from the van comes onto this board, never +12 V or LIN.</text>
+<text x="520" y="382" class="m" fill="#d33">red line = + rail (3V3), holes 3-7</text><text x="520" y="398" class="m" fill="#36c">blue line = - rail (common GND), holes 12-24</text>
+<rect x="24" y="128" width="788" height="196" rx="8" fill="#f1e9d2" stroke="#b9a97a"/>
+<circle cx="50" cy="146" r="4" class="hole"/>
+<circle cx="82" cy="146" r="4" class="hole"/>
+<circle cx="114" cy="146" r="4" class="hole"/>
+<circle cx="146" cy="146" r="4" class="hole"/>
+<circle cx="178" cy="146" r="4" class="hole"/>
+<circle cx="210" cy="146" r="4" class="hole"/>
+<circle cx="242" cy="146" r="4" class="hole"/>
+<circle cx="274" cy="146" r="4" class="hole"/>
+<circle cx="306" cy="146" r="4" class="hole"/>
+<circle cx="338" cy="146" r="4" class="hole"/>
+<circle cx="370" cy="146" r="4" class="hole"/>
+<circle cx="402" cy="146" r="4" class="hole"/>
+<circle cx="434" cy="146" r="4" class="hole"/>
+<circle cx="466" cy="146" r="4" class="hole"/>
+<circle cx="498" cy="146" r="4" class="hole"/>
+<circle cx="530" cy="146" r="4" class="hole"/>
+<circle cx="562" cy="146" r="4" class="hole"/>
+<circle cx="594" cy="146" r="4" class="hole"/>
+<circle cx="626" cy="146" r="4" class="hole"/>
+<circle cx="658" cy="146" r="4" class="hole"/>
+<circle cx="690" cy="146" r="4" class="hole"/>
+<circle cx="722" cy="146" r="4" class="hole"/>
+<circle cx="754" cy="146" r="4" class="hole"/>
+<circle cx="786" cy="146" r="4" class="hole"/>
+<circle cx="50" cy="166" r="4" class="hole"/>
+<circle cx="82" cy="166" r="4" class="hole"/>
+<circle cx="114" cy="166" r="4" class="hole"/>
+<circle cx="146" cy="166" r="4" class="hole"/>
+<circle cx="178" cy="166" r="4" class="hole"/>
+<circle cx="210" cy="166" r="4" class="hole"/>
+<circle cx="242" cy="166" r="4" class="hole"/>
+<circle cx="274" cy="166" r="4" class="hole"/>
+<circle cx="306" cy="166" r="4" class="hole"/>
+<circle cx="338" cy="166" r="4" class="hole"/>
+<circle cx="370" cy="166" r="4" class="hole"/>
+<circle cx="402" cy="166" r="4" class="hole"/>
+<circle cx="434" cy="166" r="4" class="hole"/>
+<circle cx="466" cy="166" r="4" class="hole"/>
+<circle cx="498" cy="166" r="4" class="hole"/>
+<circle cx="530" cy="166" r="4" class="hole"/>
+<circle cx="562" cy="166" r="4" class="hole"/>
+<circle cx="594" cy="166" r="4" class="hole"/>
+<circle cx="626" cy="166" r="4" class="hole"/>
+<circle cx="658" cy="166" r="4" class="hole"/>
+<circle cx="690" cy="166" r="4" class="hole"/>
+<circle cx="722" cy="166" r="4" class="hole"/>
+<circle cx="754" cy="166" r="4" class="hole"/>
+<circle cx="786" cy="166" r="4" class="hole"/>
+<line x1="106" y1="146" x2="250" y2="146" stroke="#d33" stroke-width="2"/>
+<line x1="394" y1="166" x2="794" y2="166" stroke="#36c" stroke-width="2"/>
+<text x="50" y="198" text-anchor="middle" class="m">1</text>
+<circle cx="50" cy="210" r="4" class="hole"/>
+<circle cx="50" cy="230" r="4" class="hole"/>
+<circle cx="50" cy="250" r="4" class="hole"/>
+<circle cx="50" cy="270" r="4" class="hole"/>
+<circle cx="50" cy="290" r="4" class="hole"/>
+<text x="82" y="198" text-anchor="middle" class="m">2</text>
+<circle cx="82" cy="210" r="4" class="hole"/>
+<circle cx="82" cy="230" r="4" class="hole"/>
+<circle cx="82" cy="250" r="4" class="hole"/>
+<circle cx="82" cy="270" r="4" class="hole"/>
+<circle cx="82" cy="290" r="4" class="hole"/>
+<text x="114" y="198" text-anchor="middle" class="m">3</text>
+<circle cx="114" cy="210" r="4" class="hole"/>
+<circle cx="114" cy="230" r="4" class="hole"/>
+<circle cx="114" cy="250" r="4" class="hole"/>
+<circle cx="114" cy="270" r="4" class="hole"/>
+<circle cx="114" cy="290" r="4" class="hole"/>
+<text x="146" y="198" text-anchor="middle" class="m">4</text>
+<circle cx="146" cy="210" r="4" class="hole"/>
+<circle cx="146" cy="230" r="4" class="hole"/>
+<circle cx="146" cy="250" r="4" class="hole"/>
+<circle cx="146" cy="270" r="4" class="hole"/>
+<circle cx="146" cy="290" r="4" class="hole"/>
+<text x="178" y="198" text-anchor="middle" class="m">5</text>
+<circle cx="178" cy="210" r="4" class="hole"/>
+<circle cx="178" cy="230" r="4" class="hole"/>
+<circle cx="178" cy="250" r="4" class="hole"/>
+<circle cx="178" cy="270" r="4" class="hole"/>
+<circle cx="178" cy="290" r="4" class="hole"/>
+<text x="210" y="198" text-anchor="middle" class="m">6</text>
+<circle cx="210" cy="210" r="4" class="hole"/>
+<circle cx="210" cy="230" r="4" class="hole"/>
+<circle cx="210" cy="250" r="4" class="hole"/>
+<circle cx="210" cy="270" r="4" class="hole"/>
+<circle cx="210" cy="290" r="4" class="hole"/>
+<text x="242" y="198" text-anchor="middle" class="m">7</text>
+<circle cx="242" cy="210" r="4" class="hole"/>
+<circle cx="242" cy="230" r="4" class="hole"/>
+<circle cx="242" cy="250" r="4" class="hole"/>
+<circle cx="242" cy="270" r="4" class="hole"/>
+<circle cx="242" cy="290" r="4" class="hole"/>
+<text x="274" y="198" text-anchor="middle" class="m">8</text>
+<circle cx="274" cy="210" r="4" class="hole"/>
+<circle cx="274" cy="230" r="4" class="hole"/>
+<circle cx="274" cy="250" r="4" class="hole"/>
+<circle cx="274" cy="270" r="4" class="hole"/>
+<circle cx="274" cy="290" r="4" class="hole"/>
+<text x="306" y="198" text-anchor="middle" class="m">9</text>
+<circle cx="306" cy="210" r="4" class="hole"/>
+<circle cx="306" cy="230" r="4" class="hole"/>
+<circle cx="306" cy="250" r="4" class="hole"/>
+<circle cx="306" cy="270" r="4" class="hole"/>
+<circle cx="306" cy="290" r="4" class="hole"/>
+<text x="338" y="198" text-anchor="middle" class="m">10</text>
+<circle cx="338" cy="210" r="4" class="hole"/>
+<circle cx="338" cy="230" r="4" class="hole"/>
+<circle cx="338" cy="250" r="4" class="hole"/>
+<circle cx="338" cy="270" r="4" class="hole"/>
+<circle cx="338" cy="290" r="4" class="hole"/>
+<text x="370" y="198" text-anchor="middle" class="m">11</text>
+<circle cx="370" cy="210" r="4" class="hole"/>
+<circle cx="370" cy="230" r="4" class="hole"/>
+<circle cx="370" cy="250" r="4" class="hole"/>
+<circle cx="370" cy="270" r="4" class="hole"/>
+<circle cx="370" cy="290" r="4" class="hole"/>
+<text x="402" y="198" text-anchor="middle" class="m">12</text>
+<circle cx="402" cy="210" r="4" class="hole"/>
+<circle cx="402" cy="230" r="4" class="hole"/>
+<circle cx="402" cy="250" r="4" class="hole"/>
+<circle cx="402" cy="270" r="4" class="hole"/>
+<circle cx="402" cy="290" r="4" class="hole"/>
+<text x="434" y="198" text-anchor="middle" class="m">13</text>
+<circle cx="434" cy="210" r="4" class="hole"/>
+<circle cx="434" cy="230" r="4" class="hole"/>
+<circle cx="434" cy="250" r="4" class="hole"/>
+<circle cx="434" cy="270" r="4" class="hole"/>
+<circle cx="434" cy="290" r="4" class="hole"/>
+<text x="466" y="198" text-anchor="middle" class="m">14</text>
+<circle cx="466" cy="210" r="4" class="hole"/>
+<circle cx="466" cy="230" r="4" class="hole"/>
+<circle cx="466" cy="250" r="4" class="hole"/>
+<circle cx="466" cy="270" r="4" class="hole"/>
+<circle cx="466" cy="290" r="4" class="hole"/>
+<text x="498" y="198" text-anchor="middle" class="m">15</text>
+<circle cx="498" cy="210" r="4" class="hole"/>
+<circle cx="498" cy="230" r="4" class="hole"/>
+<circle cx="498" cy="250" r="4" class="hole"/>
+<circle cx="498" cy="270" r="4" class="hole"/>
+<circle cx="498" cy="290" r="4" class="hole"/>
+<text x="530" y="198" text-anchor="middle" class="m">16</text>
+<circle cx="530" cy="210" r="4" class="hole"/>
+<circle cx="530" cy="230" r="4" class="hole"/>
+<circle cx="530" cy="250" r="4" class="hole"/>
+<circle cx="530" cy="270" r="4" class="hole"/>
+<circle cx="530" cy="290" r="4" class="hole"/>
+<text x="562" y="198" text-anchor="middle" class="m">17</text>
+<circle cx="562" cy="210" r="4" class="hole"/>
+<circle cx="562" cy="230" r="4" class="hole"/>
+<circle cx="562" cy="250" r="4" class="hole"/>
+<circle cx="562" cy="270" r="4" class="hole"/>
+<circle cx="562" cy="290" r="4" class="hole"/>
+<text x="594" y="198" text-anchor="middle" class="m">18</text>
+<circle cx="594" cy="210" r="4" class="hole"/>
+<circle cx="594" cy="230" r="4" class="hole"/>
+<circle cx="594" cy="250" r="4" class="hole"/>
+<circle cx="594" cy="270" r="4" class="hole"/>
+<circle cx="594" cy="290" r="4" class="hole"/>
+<text x="626" y="198" text-anchor="middle" class="m">19</text>
+<circle cx="626" cy="210" r="4" class="hole"/>
+<circle cx="626" cy="230" r="4" class="hole"/>
+<circle cx="626" cy="250" r="4" class="hole"/>
+<circle cx="626" cy="270" r="4" class="hole"/>
+<circle cx="626" cy="290" r="4" class="hole"/>
+<text x="658" y="198" text-anchor="middle" class="m">20</text>
+<circle cx="658" cy="210" r="4" class="hole"/>
+<circle cx="658" cy="230" r="4" class="hole"/>
+<circle cx="658" cy="250" r="4" class="hole"/>
+<circle cx="658" cy="270" r="4" class="hole"/>
+<circle cx="658" cy="290" r="4" class="hole"/>
+<text x="690" y="198" text-anchor="middle" class="m">21</text>
+<circle cx="690" cy="210" r="4" class="hole"/>
+<circle cx="690" cy="230" r="4" class="hole"/>
+<circle cx="690" cy="250" r="4" class="hole"/>
+<circle cx="690" cy="270" r="4" class="hole"/>
+<circle cx="690" cy="290" r="4" class="hole"/>
+<text x="722" y="198" text-anchor="middle" class="m">22</text>
+<circle cx="722" cy="210" r="4" class="hole"/>
+<circle cx="722" cy="230" r="4" class="hole"/>
+<circle cx="722" cy="250" r="4" class="hole"/>
+<circle cx="722" cy="270" r="4" class="hole"/>
+<circle cx="722" cy="290" r="4" class="hole"/>
+<text x="754" y="198" text-anchor="middle" class="m">23</text>
+<circle cx="754" cy="210" r="4" class="hole"/>
+<circle cx="754" cy="230" r="4" class="hole"/>
+<circle cx="754" cy="250" r="4" class="hole"/>
+<circle cx="754" cy="270" r="4" class="hole"/>
+<circle cx="754" cy="290" r="4" class="hole"/>
+<text x="786" y="198" text-anchor="middle" class="m">24</text>
+<circle cx="786" cy="210" r="4" class="hole"/>
+<circle cx="786" cy="230" r="4" class="hole"/>
+<circle cx="786" cy="250" r="4" class="hole"/>
+<circle cx="786" cy="270" r="4" class="hole"/>
+<circle cx="786" cy="290" r="4" class="hole"/>
+<text x="30" y="214" class="m">A</text>
+<text x="30" y="234" class="m">B</text>
+<text x="30" y="254" class="m">C</text>
+<text x="30" y="274" class="m">D</text>
+<text x="30" y="294" class="m">E</text>
+<line x1="114" y1="250" x2="242" y2="250" stroke="#888" stroke-width="3"/>
+<rect x="148.0" y="242" width="60" height="16" rx="4" fill="#d9a066" stroke="#333"/><text x="178.0" y="254" text-anchor="middle" font-size="10" class="t">470 R</text>
+<circle cx="114" cy="250" r="6" fill="#888" stroke="#222"/>
+<circle cx="242" cy="250" r="6" fill="#888" stroke="#222"/>
+<line x1="338" y1="250" x2="466" y2="250" stroke="#888" stroke-width="3"/>
+<rect x="372.0" y="242" width="60" height="16" rx="4" fill="#d9a066" stroke="#333"/><text x="402.0" y="254" text-anchor="middle" font-size="10" class="t">1k R1</text>
+<circle cx="338" cy="250" r="6" fill="#888" stroke="#222"/>
+<circle cx="466" cy="250" r="6" fill="#888" stroke="#222"/>
+<line x1="466" y1="166" x2="466" y2="210" stroke="#888" stroke-width="3"/><rect x="458" y="174" width="16" height="26" rx="4" fill="#d9a066" stroke="#333"/><text x="452" y="190" text-anchor="end" font-size="10" class="t">10k R2</text>
+<circle cx="466" cy="166" r="6" fill="#888" stroke="#222"/>
+<circle cx="466" cy="210" r="6" fill="#888" stroke="#222"/>
+<line x1="114" y1="290" x2="114" y2="360" class="w" stroke="#2e9e44"/>
+<circle cx="114" cy="290" r="6" fill="#2e9e44" stroke="#222"/>
+<text x="114" y="382" text-anchor="middle" class="t">CrowPanel</text><text x="114" y="398" text-anchor="middle" class="m">IO2 (TX)</text>
+<line x1="242" y1="290" x2="242" y2="360" class="w" stroke="#2e9e44"/>
+<circle cx="242" cy="290" r="6" fill="#2e9e44" stroke="#222"/>
+<text x="242" y="382" text-anchor="middle" class="t">module</text><text x="242" y="398" text-anchor="middle" class="m">TX terminal</text>
+<line x1="338" y1="290" x2="338" y2="360" class="w" stroke="#2a6fd6"/>
+<circle cx="338" cy="290" r="6" fill="#2a6fd6" stroke="#222"/>
+<text x="338" y="382" text-anchor="middle" class="t">module</text><text x="338" y="398" text-anchor="middle" class="m">RX terminal</text>
+<line x1="466" y1="290" x2="466" y2="360" class="w" stroke="#2a6fd6"/>
+<circle cx="466" cy="290" r="6" fill="#2a6fd6" stroke="#222"/>
+<text x="466" y="382" text-anchor="middle" class="t">CrowPanel</text><text x="466" y="398" text-anchor="middle" class="m">IO3 (RX)</text>
+<line x1="146" y1="146" x2="146" y2="96" class="w" stroke="#e08a1e"/>
+<circle cx="146" cy="146" r="6" fill="#e08a1e" stroke="#222"/>
+<text x="146" y="72" text-anchor="middle" class="t">CrowPanel</text><text x="146" y="86" text-anchor="middle" class="m">3V3</text>
+<line x1="210" y1="146" x2="210" y2="96" class="w" stroke="#e08a1e"/>
+<circle cx="210" cy="146" r="6" fill="#e08a1e" stroke="#222"/>
+<text x="210" y="72" text-anchor="middle" class="t">module</text><text x="210" y="86" text-anchor="middle" class="m">SLP</text>
+<line x1="530" y1="166" x2="530" y2="96" class="w" stroke="#111"/>
+<circle cx="530" cy="166" r="6" fill="#111" stroke="#222"/>
+<text x="530" y="72" text-anchor="middle" class="t">CP</text><text x="530" y="86" text-anchor="middle" class="m">GND</text>
+<line x1="594" y1="166" x2="594" y2="96" class="w" stroke="#111"/>
+<circle cx="594" cy="166" r="6" fill="#111" stroke="#222"/>
+<text x="594" y="72" text-anchor="middle" class="t">module</text><text x="594" y="86" text-anchor="middle" class="m">GND (MCU)</text>
+<line x1="658" y1="166" x2="658" y2="96" class="w" stroke="#111"/>
+<circle cx="658" cy="166" r="6" fill="#111" stroke="#222"/>
+<text x="658" y="72" text-anchor="middle" class="t">module</text><text x="658" y="86" text-anchor="middle" class="m">GND (bus)</text>
+<line x1="722" y1="166" x2="722" y2="96" class="w" stroke="#111"/>
+<circle cx="722" cy="166" r="6" fill="#111" stroke="#222"/>
+<text x="722" y="72" text-anchor="middle" class="t">battery</text><text x="722" y="86" text-anchor="middle" class="m">GND</text>
+<line x1="786" y1="166" x2="786" y2="96" class="w" stroke="#111"/>
+<circle cx="786" cy="166" r="6" fill="#111" stroke="#222"/>
+<text x="786" y="72" text-anchor="middle" class="t">LIN</text><text x="786" y="86" text-anchor="middle" class="m">GND</text>
+<text x="24" y="440" class="h">Wiring list</text>
+<text x="24" y="464" class="t">Signals: IO2 to hole 3, 470 R 3-7, hole 7 to module TX. Module RX to hole 10, 1k R1 10-14, hole 14 to IO3, 10k R2 hole 14 to GND rail.</text>
+<text x="24" y="484" class="t">3V3 rail: CrowPanel 3V3 into hole 4, module SLP terminal from hole 6.</text>
+<text x="24" y="504" class="t">GND rail, five wires: CrowPanel GND (16), module GND MCU-side terminal (18), module GND bus-side terminal (20),</text>
+<text x="24" y="524" class="t">    battery GND (22), LIN line GND from the RJ12 splitter (24). All five are now one net.</text>
+<text x="24" y="544" class="t">Test first: module powered, IO3 wire out. Hole 14 to GND must read 2.5 V to 3.3 V. Then plug the IO3 wire in.</text>
+<text x="24" y="564" class="t">Still off the breadboard: +12 V to the module VIN and the LIN wire to the module LIN terminal, both on the module's own terminal block.</text>
+<text x="24" y="584" class="t">GND wires carry only the module's few mA here. Do not run other loads' return current through this board.</text>
+</svg>

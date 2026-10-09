@@ -1,0 +1,9 @@
+# Name,   Type, SubType, Offset,   Size
+# nvs stays where it always was, so settings and pairings survive the switch to OTA.
+nvs,      data, nvs,     0x9000,   0x60000
+otadata,  data, ota,     0x69000,  0x2000
+phy_init, data, phy,     0x6B000,  0x1000
+ota_0,    app,  ota_0,   0x70000,  0x600000
+ota_1,    app,  ota_1,   0x670000, 0x600000
+# BreezyBox shell files (LittleFS, mounted by BreezyBox); the rest of the 16 MB flash.
+storage,  data, littlefs, 0xC70000, 0x390000
