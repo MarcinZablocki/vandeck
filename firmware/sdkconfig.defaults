@@ -86,6 +86,11 @@ CONFIG_ESP_HOSTED_PRIV_SDIO_PIN_D1_4BIT_BUS_SLOT_1=16
 CONFIG_ESP_HOSTED_PRIV_SDIO_PIN_D2_4BIT_BUS_SLOT_1=15
 CONFIG_ESP_HOSTED_PRIV_SDIO_PIN_D3_4BIT_BUS_SLOT_1=14
 CONFIG_ESP_HOSTED_SDIO_GPIO_RESET_SLAVE=32
+# SDIO buffer pools are allocated from internal RAM by esp_hosted's constructor, before the scheduler starts,
+# when only ~140 KB of internal RAM exists (the rest still holds the startup stacks). At 20 they left no room for
+# FreeRTOS's timer task and 0.5.9 asserted at boot (vApplicationGetTimerTaskMemory). 12 is plenty for this panel.
+CONFIG_ESP_HOSTED_SDIO_TX_Q_SIZE=12
+CONFIG_ESP_HOSTED_SDIO_RX_Q_SIZE=12
 # Leave CONFIG_ESP_HOSTED_MEMPOOL_PREFER_SPIRAM off: SDIO TX DMA from PSRAM times out under load on this board.
 CONFIG_ESP_WIFI_REMOTE_ENABLED=y
 CONFIG_ESP_WIFI_REMOTE_LIBRARY_HOSTED=y

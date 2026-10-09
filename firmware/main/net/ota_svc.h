@@ -19,6 +19,7 @@ ota_install_t ota_svc_last_install(void);
 // Shared with the GitHub updater (update_svc): one image write at a time, the same finish and record keeping.
 bool ota_svc_claim(void);                     // false if an update is already being written
 void ota_svc_release(void);
+bool ota_svc_busy(void);                      // an image is being written (until release or restart)
 void ota_svc_set_state(vd_ota_state_t st, int pct, const char *msg);   // the full-screen progress overlay
 // Boot the freshly written (and esp_ota_end-verified) image in dst: records it, restarts in ~1.5 s.
 // quiet: no "Restarting" overlay, and the next boot keeps the screen dark (a night-time automatic update).

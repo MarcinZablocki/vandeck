@@ -10,6 +10,7 @@
 #include "app/model.h"
 #include "app/settings.h"
 #include "net/time_svc.h"
+#include "net/ota_svc.h"
 #include <time.h>
 #include "driver/uart.h"
 #include "driver/gpio.h"
@@ -308,7 +309,17 @@ static void task(void *arg)
                     if (fl == 0 && b[i] != 0x55) continue;   // skip the break byte(s) before the sync
                     if (fl < (int)sizeof fr) fr[fl++] = b[i];
                 }
-                if (fl >= 2 && !answered && lin_pid(fr[1] & 0x3F) == fr[1]) { answered = true; answer(fr[1] & 0x3F, fr[1]); }
+                if (fl >= 2 && !answered && lin_pid(fr[1] & 0x3F) == fr[1]) {
+                    answered = true;
+                    // Only answer while the response slot is still open: nothing past the header has arrived yet.
+                    // A late answer (this task was held up, e.g. by flash writes, which also hold the UART ISR)
+                    // lands on top of the next frame and garbles the heater's replies; the CP Plus then reports
+                    // W255 (no contact with heater). Missing an answer is harmless: it just asks again.
+                    size_t more = 0;
+                    uart_get_buffered_data_len(PORT, &more);
+                    // Not at all while an update is written: flash erases stall everything for tens of ms.
+                    if (fl == 2 && !more && !ota_svc_busy()) answer(fr[1] & 0x3F, fr[1]);
+                }
             } else if (ev.type == UART_FIFO_OVF || ev.type == UART_BUFFER_FULL) {
                 uart_flush_input(PORT); xQueueReset(s_uq); fl = 0;
             }

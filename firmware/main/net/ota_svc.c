@@ -56,6 +56,7 @@ static void reboot_task(void *a)
 
 bool ota_svc_claim(void) { return !__atomic_exchange_n(&s_busy, true, __ATOMIC_ACQ_REL); }
 void ota_svc_release(void) { s_busy = false; }
+bool ota_svc_busy(void) { return __atomic_load_n(&s_busy, __ATOMIC_ACQUIRE); }
 void ota_svc_set_state(vd_ota_state_t st, int pct, const char *msg) { set_state(st, pct, msg); }
 
 esp_err_t ota_svc_commit(const esp_partition_t *dst, bool quiet)
