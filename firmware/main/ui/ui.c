@@ -17,7 +17,7 @@ static time_t s_sec;
 static int s_view;
 static lv_obj_t *s_views[V_COUNT];
 static struct { lv_obj_t *box, *icon, *lbl; } s_nav[V_COUNT];
-static lv_obj_t *l_time, *l_ampm, *l_date, *l_demo, *d_wifi, *d_ble, *l_ble, *d_upd;
+static lv_obj_t *l_time, *l_ampm, *l_date, *l_demo, *d_wifi, *d_ble, *l_ble, *d_upd, *d_heat;
 
 const vd_model_t *ui_model(void) { return &s_m; }
 void ui_request_refresh(void) { s_ver = UINT32_MAX; }
@@ -86,6 +86,8 @@ static void refresh_rail(const vd_model_t *m)
     w_fmt(l_ble, "BLE %d/%d", on, ROLE_COUNT);
     w_bg(d_ble, on == ROLE_COUNT ? C_GREEN : on ? C_AMBER : C_FAINT);
     w_show(d_upd, m->upd.state == UPD_AVAILABLE && g_cfg.upd_mode != UPD_MODE_OFF);
+    w_show(d_heat, m->heater.link && m->heater.err);
+    w_bg(d_heat, m->heater.warn ? C_AMBER : C_RED);
     refresh_wx_nav(m);
 }
 
@@ -208,6 +210,9 @@ static void rail_create(lv_obj_t *scr)
     lv_obj_t *ln = w_rect(rail, C_LINE, 0);
     lv_obj_set_size(ln, 56, 2);
     nav_item(rail, V_ENERGY, IC_ENERGY, "Energy");
+    d_heat = w_dot(s_nav[V_ENERGY].box, 10, C_RED);    // Truma fault
+    lv_obj_add_flag(d_heat, LV_OBJ_FLAG_FLOATING);
+    lv_obj_align(d_heat, LV_ALIGN_TOP_RIGHT, -22, 8);
     nav_item(rail, V_SOLAR, IC_SOLAR, "Solar");
     nav_item(rail, V_TANKS, IC_TANKS, "Tanks");
     nav_item(rail, V_STARLINK, IC_STARLINK, "Starlink");

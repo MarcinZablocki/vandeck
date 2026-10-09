@@ -9,7 +9,7 @@
 static lv_obj_t *l_pv, *l_pvcap, *st_bar[3], *st_lbl[3], *l_serr, *l_sbv, *l_sba, *l_scp, *l_sload, *l_yield;
 static lv_obj_t *l_tot, *l_tot_ah, *flow_dot, *l_flow, *l_flow_w;
 static struct { lv_obj_t *fill, *soc, *amps, *ah, *err; } B[2];
-static lv_obj_t *l_roomnow, *sp_dim[4];   // setpoint controls dim with the heating switch; the room reading doesn't
+static lv_obj_t *l_roomnow, *sp_dim[4], *h_spc, *h_logo, *h_err, *h_err_t, *h_err_fix;   // fault banner replaces spacer + logo   // setpoint controls dim with the heating switch; the room reading doesn't
 #define HEAD_H 56   // every card header is this tall (the heater switch), so titles line up across the row
 static lv_obj_t *l_hsub, *sw_heat, *ctrls, *b_minus, *b_plus, *l_sp, *l_unit, *seg_water, *seg_fan;
 static bool s_unit_f = false;
@@ -205,11 +205,24 @@ static void heater_card(lv_obj_t *v)
     w_label(fg, F_16, C_MUTED, "Fan");
     seg_fan = w_seg(fg, FAN_MAP, 68, F_18, on_fan, NULL);
 
-    w_spacer(c);
-    lv_obj_t *logo = w_row(c, 10);
+    h_spc = w_spacer(c);
+    lv_obj_t *logo = h_logo = w_row(c, 10);
     lv_obj_set_width(logo, LV_PCT(100));
     lv_obj_set_flex_align(logo, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     w_tinted_image(logo, &img_logo_160, C_FAINT);
+
+    // Truma fault: code and cause, then what to do (two lines at most; the reset hint is in the header)
+    h_err = w_rect(c, C_INSET, 16);
+    lv_obj_set_size(h_err, LV_PCT(100), LV_SIZE_CONTENT);
+    lv_obj_set_style_pad_all(h_err, 12, 0);
+    lv_obj_set_style_border_width(h_err, 2, 0);
+    lv_obj_set_flex_flow(h_err, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(h_err, 4, 0);
+    h_err_t = w_label(h_err, F_16, C_RED, "");
+    h_err_fix = w_label(h_err, F_14, C_TXT2, "");
+    lv_obj_set_width(h_err_fix, LV_PCT(100));
+    lv_label_set_long_mode(h_err_fix, LV_LABEL_LONG_WRAP);
+    w_show(h_err, false);
 }
 
 
@@ -286,9 +299,21 @@ void ui_energy_refresh(const vd_model_t *m)
 #if CONFIG_VD_LIN_MODE_INETBOX
                    : !m->heater.registered ? "Run PR SET on the CP Plus"
 #endif
+                   : m->heater.err ? (m->heater.warn ? "Warning" : "Fault: switch off and on")
                    : !on ? (g_cfg.water == WATER_OFF ? "Off" : "Water only")
                    : g_cfg.water == WATER_OFF ? "Heating" : "Heating + water";
     lv_label_set_text(l_hsub, st);
+    bool fault = m->heater.link && m->heater.err;
+    uint32_t hc = m->heater.warn ? C_AMBER : C_RED;
+    w_color(l_hsub, fault ? hc : C_MUTED);
+    w_show(h_err, fault); w_show(h_logo, !fault); w_show(h_spc, !fault);
+    if (fault) {
+        const char *fix, *t = truma_err_text(m->heater.err, &fix);
+        w_fmt(h_err_t, "%c %u  -  %s", m->heater.warn ? 'W' : 'E', m->heater.err, t);
+        w_color(h_err_t, hc);
+        lv_obj_set_style_border_color(h_err, HEX(hc), 0);
+        lv_label_set_text(h_err_fix, fix);
+    }
     for (int i = 0; i < 4; i++) lv_obj_set_style_opa(sp_dim[i], on ? LV_OPA_COVER : LV_OPA_40, 0);
     w_enable(b_minus, on); w_enable(b_plus, on); w_enable(seg_water, true); w_enable(seg_fan, true);
     char b[12]; ui_fmt_temp(b, sizeof b, g_cfg.setpoint_c);

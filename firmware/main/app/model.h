@@ -21,7 +21,8 @@ enum { SL_DOWN, SL_UP, SL_LAT, SL_PWR, SL_PING, SL_OBS, SL_NHIST };
 typedef struct { bool valid; int64_t ts_us; float pv_w, pv_v, batt_v, batt_a, load_a; uint16_t yield_wh; vd_stage_t stage; uint8_t mode, err; } vd_solar_t;
 typedef struct { bool valid, stale; int64_t ts_us; float soc, volts, amps, remain_ah, full_ah, temp_c; } vd_batt_t;   // full_ah = BMS full-charge capacity
 // Requested values live in g_cfg (mirrored from the CP Plus in iNet box mode). registered = the CP Plus talks to us.
-typedef struct { bool link, registered; bool heating; float room_c; uint16_t err; } vd_heater_t;
+// err = Truma fault code (0 = none); warn = it's a warning (W) the heater runs through, not an error (E) that stopped it.
+typedef struct { bool link, registered; bool heating, warn; float room_c; uint16_t err; } vd_heater_t;
 typedef struct { int8_t level; bool reading; int64_t read_at_us; } vd_tank_t;           // level -1 unknown, 0..3 = E..F
 typedef struct {
     bool power; int64_t power_since_us;

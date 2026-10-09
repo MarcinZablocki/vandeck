@@ -106,7 +106,7 @@ static esp_err_t on_status(httpd_req_t *r)
     add(&j, "\"heater\":{");
     boolean(&j, "link", h->link); boolean(&j, "registered", h->registered); boolean(&j, "heating", h->heating);
     boolean(&j, "on", g_cfg.heater_on); num(&j, "setpoint_c", g_cfg.setpoint_c, 1); num(&j, "room_c", h->room_c, 1);
-    integer(&j, "water", g_cfg.water); integer(&j, "fan", g_cfg.fan); integer(&j, "error", h->err);
+    integer(&j, "water", g_cfg.water); integer(&j, "fan", g_cfg.fan); integer(&j, "error", h->err); integer(&j, "warning", h->warn);
     end(&j, "},");
 
     static const char *TANK[] = { "lpg", "grey" };

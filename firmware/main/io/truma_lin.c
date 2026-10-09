@@ -148,6 +148,7 @@ static void on_status(const uint8_t *buf, int n)
     if (!isnan(rc)) M.heater.room_c = rc;
     M.heater.heating = op >= 4;                  // 0 off, 1 warning, 4 starting, 5 on
     M.heater.err = err;
+    M.heater.warn = op == 1;
     model_commit();
     ESP_LOGI(TAG, "status: room %.1f set %.1f mode %u water %u op %u err %u", rc, code_temp(room), mode, water, op, err);
 }

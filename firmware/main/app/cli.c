@@ -5,6 +5,7 @@
 #include "ble/ble_svc.h"
 #include "net/tailnet_svc.h"
 #include "net/weather.h"
+#include "io/truma_lin.h"
 #include "net/update_svc.h"
 #include "esp_app_desc.h"
 #include "esp_console.h"
@@ -75,7 +76,10 @@ static void print_heater(const vd_model_t *m)
            g_cfg.heater_on ? (h->heating ? "on, heating" : "on") : "off", g_cfg.setpoint_c);
     if (!isnan(h->room_c) && h->room_c != 0) printf(", room %.1f C", h->room_c);
     printf(", water %s, fan %s", WATER[g_cfg.water % 3], FAN[g_cfg.fan % 3]);
-    if (h->err) printf(", error %u", h->err);
+    if (h->err) {
+        const char *fix, *t = truma_err_text(h->err, &fix);
+        printf(", %s %c %u: %s. %s", h->warn ? "warning" : "fault", h->warn ? 'W' : 'E', h->err, t, fix);
+    }
     printf("\n");
 }
 
