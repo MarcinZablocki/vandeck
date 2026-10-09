@@ -29,7 +29,7 @@ config VD_BATT_CAPACITY_AH
 
 config VD_PV_ARRAY_W
     int "Solar array peak power (W)"
-    default 400
+    default 220
     help
         Used with the weather forecast's daily irradiation to estimate tomorrow's solar yield.
 
