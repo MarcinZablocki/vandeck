@@ -1,0 +1,6 @@
+#pragma once
+#define CONFIG_VD_OTA_KEY "vandeck"
+#define CONFIG_VD_BATT_CAPACITY_AH 160
+#define CONFIG_VD_PV_ARRAY_W 220
+#define CONFIG_VD_PV_PERF_PCT 80
+#define CONFIG_VD_LIN_MODE_INETBOX 1

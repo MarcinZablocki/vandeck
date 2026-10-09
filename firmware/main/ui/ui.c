@@ -172,11 +172,11 @@ static lv_obj_t *rail_item(lv_obj_t *p, const char *icon, const char *txt, lv_ob
     lv_obj_set_style_bg_opa(b, LV_OPA_TRANSP, 0);
     lv_obj_set_style_bg_opa(b, LV_OPA_COVER, LV_STATE_PRESSED);
     lv_obj_set_style_bg_color(b, HEX(C_INSET), LV_STATE_PRESSED);
-    lv_obj_set_size(b, LV_PCT(100), 64);
+    lv_obj_set_size(b, LV_PCT(100), SZ(64, 48));
     lv_obj_add_flag(b, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_flex_flow(b, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(b, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_row(b, 2, 0);
+    lv_obj_set_style_pad_row(b, SZ(2, 0), 0);
     lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, ud);
     lv_obj_t *i = w_label(b, F_ICON32, C_MUTED, icon);
     lv_obj_t *l = w_label(b, F_14, C_MUTED, txt);
@@ -193,8 +193,8 @@ static void nav_item(lv_obj_t *p, int v, const char *icon, const char *txt)
 // Left rail: clock, the weather entry (live conditions), the pages, then connection status and Settings.
 static void rail_create(lv_obj_t *scr)
 {
-    lv_obj_t *rail = w_col(scr, 6);
-    lv_obj_set_size(rail, 96, LV_PCT(100));
+    lv_obj_t *rail = w_col(scr, SZ(6, 4));
+    lv_obj_set_size(rail, SZ(96, 84), LV_PCT(100));
     lv_obj_set_flex_align(rail, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
     lv_obj_t *tr = w_row(rail, 3);
@@ -205,14 +205,14 @@ static void rail_create(lv_obj_t *scr)
     l_demo = w_label(rail, F_14, C_AMBER, "DEMO");
 
     lv_obj_t *gap = w_box(rail);
-    lv_obj_set_height(gap, 4);
+    lv_obj_set_height(gap, SZ(4, 0));
     nav_item(rail, V_WEATHER, IC_WX_PARTLY, "Weather");
     lv_obj_t *ln = w_rect(rail, C_LINE, 0);
-    lv_obj_set_size(ln, 56, 2);
+    lv_obj_set_size(ln, SZ(56, 48), 2);
     nav_item(rail, V_ENERGY, IC_ENERGY, "Energy");
     d_heat = w_dot(s_nav[V_ENERGY].box, 10, C_RED);    // Truma fault
     lv_obj_add_flag(d_heat, LV_OBJ_FLAG_FLOATING);
-    lv_obj_align(d_heat, LV_ALIGN_TOP_RIGHT, -22, 8);
+    lv_obj_align(d_heat, LV_ALIGN_TOP_RIGHT, SZ(-22, -16), SZ(8, 4));
     nav_item(rail, V_SOLAR, IC_SOLAR, "Solar");
     nav_item(rail, V_TANKS, IC_TANKS, "Tanks");
     nav_item(rail, V_STARLINK, IC_STARLINK, "Starlink");
@@ -224,17 +224,19 @@ static void rail_create(lv_obj_t *scr)
     lv_obj_t *sb = rail_item(rail, IC_SETTINGS, "Settings", NULL, NULL, on_settings, NULL);
     d_upd = w_dot(sb, 10, C_AMBER);                  // a firmware update is waiting
     lv_obj_add_flag(d_upd, LV_OBJ_FLAG_FLOATING);
-    lv_obj_align(d_upd, LV_ALIGN_TOP_RIGHT, -22, 8);
+    lv_obj_align(d_upd, LV_ALIGN_TOP_RIGHT, SZ(-22, -16), SZ(8, 4));
 }
 
 void ui_init(void)
 {
+    lv_display_t *d = lv_display_get_default();
+    g_compact = lv_display_get_horizontal_resolution(d) < 1000 || lv_display_get_vertical_resolution(d) < 560;
     lv_obj_t *scr = lv_screen_active();
     lv_obj_set_style_bg_color(scr, HEX(C_BG), 0);
     lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
     lv_obj_set_style_text_color(scr, HEX(C_TXT), 0);
-    lv_obj_set_style_pad_all(scr, 16, 0);
-    lv_obj_set_style_pad_column(scr, 12, 0);
+    lv_obj_set_style_pad_all(scr, SZ(16, 10), 0);
+    lv_obj_set_style_pad_column(scr, SZ(12, 10), 0);
     lv_obj_set_flex_flow(scr, LV_FLEX_FLOW_ROW);
     lv_obj_remove_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
 
@@ -298,6 +300,7 @@ static void wake(void)
     lv_obj_delete_async(s_blank);
     s_blank = NULL;
     board_set_backlight(g_cfg.brightness);
+    ui_request_refresh();   // views restart what they paused while dark (the battery flow animation)
     ESP_LOGI("screen", "on");
     lv_display_trigger_activity(NULL);
 }
@@ -313,6 +316,7 @@ void ui_screen_sleep(void)
     lv_obj_add_flag(s_blank, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(s_blank, on_blank_touch, LV_EVENT_PRESSED, NULL);
     board_set_backlight(0);
+    ui_request_refresh();
 }
 
 uint32_t ui_idle_ms(void) { return lv_display_get_inactive_time(NULL); }

@@ -248,7 +248,7 @@ void ui_weather_refresh(const vd_model_t *m)
         if (dn < today) continue;
         if (dn == today) td = d;
         if (dn == today) lv_label_set_text(D[k].t, "Today");
-        else if (dn == today + 1) lv_label_set_text(D[k].t, "Tomorrow");
+        else if (dn == today + 1) lv_label_set_text(D[k].t, SZ("Tomorrow", "Tmrw"));
         else lv_label_set_text(D[k].t, WD[(dn + 4) % 7]);
         lv_label_set_text(D[k].ic, ui_wx_icon(d->code, true));
         w_color(D[k].ic, ui_wx_color(d->code, true));

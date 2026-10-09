@@ -3,6 +3,8 @@
 #include <stdio.h>
 #include <string.h>
 
+bool g_compact;
+
 // Content-sized boxes must keep START main-axis flex alignment: LVGL measures LV_SIZE_CONTENT from the box's
 // left/top edge, so END/CENTER-packed children overhang that edge, aren't counted, and get clipped.
 // Position the box from its parent instead.
@@ -43,8 +45,8 @@ lv_obj_t *w_col(lv_obj_t *p, int gap)
 
 lv_obj_t *w_card(lv_obj_t *p)
 {
-    lv_obj_t *o = w_rect(p, C_CARD, 24);
-    lv_obj_set_style_pad_all(o, 24, 0);
+    lv_obj_t *o = w_rect(p, C_CARD, SZ(24, 18));
+    lv_obj_set_style_pad_all(o, SZ(24, 16), 0);
     lv_obj_set_flex_flow(o, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(o, 0, 0);
     return o;
@@ -83,7 +85,7 @@ lv_obj_t *w_header(lv_obj_t *p, const char *title, const char *sub, lv_obj_t **s
     lv_obj_set_width(r, LV_PCT(100));
     lv_obj_set_flex_align(r, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_t *c = w_col(r, 2);
-    w_label(c, F_20, C_TXT, title);
+    w_label(c, SZ(F_20, F_18), C_TXT, title);
     lv_obj_t *s = w_label(c, F_14, C_MUTED, sub);
     if (sub_out) *sub_out = s;
     return r;
@@ -94,11 +96,11 @@ lv_obj_t *w_kv(lv_obj_t *p, const char *key, const char *unit)
     lv_obj_t *r = w_row(p, 8);
     lv_obj_set_width(r, LV_PCT(100));
     lv_obj_set_flex_align(r, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_END);
-    w_label(r, F_16, C_MUTED, key);
-    lv_obj_t *v = w_row(r, 6);
+    w_label(r, SZ(F_16, F_14), C_MUTED, key);
+    lv_obj_t *v = w_row(r, SZ(6, 4));
     lv_obj_set_flex_align(v, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_END);
-    lv_obj_t *val = w_label(v, F_26, C_TXT, "--");
-    w_label(v, F_16, C_MUTED, unit);
+    lv_obj_t *val = w_label(v, SZ(F_26, F_22), C_TXT, "--");
+    w_label(v, SZ(F_16, F_14), C_MUTED, unit);
     return val;
 }
 
@@ -108,7 +110,7 @@ lv_obj_t *w_btn(lv_obj_t *p, const char *txt, const lv_font_t *f, int h, bool pr
     lv_obj_remove_style_all(b);
     lv_obj_set_style_bg_opa(b, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(b, 14, 0);
-    lv_obj_set_style_pad_hor(b, 20, 0);
+    lv_obj_set_style_pad_hor(b, SZ(20, 14), 0);
     lv_obj_set_style_bg_color(b, HEX(C_BTN2), LV_STATE_PRESSED);
     lv_obj_set_size(b, LV_SIZE_CONTENT, h);
     lv_obj_t *l = lv_label_create(b);
@@ -139,9 +141,9 @@ lv_obj_t *w_seg(lv_obj_t *p, const char *const *map, int h, const lv_font_t *f, 
     lv_obj_set_size(bm, LV_PCT(100), h);
     lv_obj_set_style_bg_opa(bm, LV_OPA_COVER, 0);
     lv_obj_set_style_bg_color(bm, HEX(C_INSET), 0);
-    lv_obj_set_style_radius(bm, 18, 0);
-    lv_obj_set_style_pad_all(bm, 6, 0);
-    lv_obj_set_style_pad_gap(bm, 6, 0);
+    lv_obj_set_style_radius(bm, SZ(18, 14), 0);
+    lv_obj_set_style_pad_all(bm, SZ(6, 4), 0);
+    lv_obj_set_style_pad_gap(bm, SZ(6, 4), 0);
     lv_obj_set_style_bg_opa(bm, LV_OPA_COVER, LV_PART_ITEMS);
     lv_obj_set_style_bg_color(bm, HEX(C_INSET), LV_PART_ITEMS);
     lv_obj_set_style_bg_color(bm, HEX(C_BTN), LV_PART_ITEMS | LV_STATE_PRESSED);
@@ -149,7 +151,7 @@ lv_obj_t *w_seg(lv_obj_t *p, const char *const *map, int h, const lv_font_t *f, 
     lv_obj_set_style_text_color(bm, HEX(C_TXT2), LV_PART_ITEMS);
     lv_obj_set_style_text_color(bm, HEX(C_BG), LV_PART_ITEMS | LV_STATE_CHECKED);
     lv_obj_set_style_text_font(bm, f, LV_PART_ITEMS);
-    lv_obj_set_style_radius(bm, 13, LV_PART_ITEMS);
+    lv_obj_set_style_radius(bm, SZ(13, 10), LV_PART_ITEMS);
     if (cb) lv_obj_add_event_cb(bm, cb, LV_EVENT_VALUE_CHANGED, ud);
     return bm;
 }
@@ -173,7 +175,7 @@ int w_seg_get(lv_event_t *e)
 lv_obj_t *w_switch(lv_obj_t *p, lv_event_cb_t cb, void *ud)
 {
     lv_obj_t *sw = lv_switch_create(p);
-    lv_obj_set_size(sw, 104, 56);
+    lv_obj_set_size(sw, SZ(104, 76), SZ(56, 40));
     lv_obj_set_style_bg_color(sw, HEX(C_BTN2), 0);
     lv_obj_set_style_bg_opa(sw, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(sw, LV_RADIUS_CIRCLE, 0);

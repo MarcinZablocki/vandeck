@@ -25,28 +25,28 @@ static void on_forecast(lv_event_t *e) { ui_show_view(V_WEATHER); }
 // Expected yield for the next days from the forecast's irradiation; tapping it opens the Weather page.
 static void forecast_strip(lv_obj_t *v)
 {
-    lv_obj_t *c = w_rect(v, C_CARD, 24);
+    lv_obj_t *c = w_rect(v, C_CARD, SZ(24, 18));
     lv_obj_set_grid_cell(c, LV_GRID_ALIGN_STRETCH, 0, 2, LV_GRID_ALIGN_STRETCH, 1, 1);
-    lv_obj_set_style_pad_hor(c, 24, 0);
+    lv_obj_set_style_pad_hor(c, SZ(24, 16), 0);
     lv_obj_set_flex_flow(c, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(c, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_column(c, 16, 0);
+    lv_obj_set_style_pad_column(c, SZ(16, 10), 0);
     lv_obj_add_flag(c, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(c, on_forecast, LV_EVENT_CLICKED, NULL);
     lv_obj_t *t = w_col(c, 2);
-    lv_obj_set_width(t, 150);
+    lv_obj_set_width(t, SZ(150, 76));
     w_label(t, F_18, C_TXT, "Forecast");
-    w_label(t, F_14, C_MUTED, "Expected yield");
+    w_label(t, F_14, C_MUTED, SZ("Expected yield", "Yield"));
     fc_none = w_label(c, F_16, C_MUTED, "");
     fc_days = w_row(c, 8);
     lv_obj_set_flex_grow(fc_days, 1);
     for (int i = 0; i < FC_DAYS; i++) {
-        lv_obj_t *d = fc_col[i] = w_row(fc_days, 10);
+        lv_obj_t *d = fc_col[i] = w_row(fc_days, SZ(10, 6));
         lv_obj_set_flex_grow(d, 1);
         fc_ic[i] = w_label(d, F_ICON32, C_TXT2, "");
         lv_obj_t *dc = w_col(d, 0);
         fc_day[i] = w_label(dc, F_14, C_MUTED, "");
-        fc_kwh[i] = w_label(dc, F_20, C_AMBER, "");
+        fc_kwh[i] = w_label(dc, SZ(F_20, F_16), C_AMBER, "");
     }
 }
 
@@ -88,23 +88,27 @@ lv_obj_t *ui_solar_create(lv_obj_t *p)
 {
     static int32_t cols[] = { LV_GRID_FR(1), 300, LV_GRID_TEMPLATE_LAST };
     static int32_t rows[] = { LV_GRID_FR(1), 92, LV_GRID_TEMPLATE_LAST };
+    if (g_compact) { cols[1] = 224; rows[1] = 68; }
     lv_obj_t *v = w_box(p);
     lv_obj_set_size(v, LV_PCT(100), LV_PCT(100));
     lv_obj_set_grid_dsc_array(v, cols, rows);
-    lv_obj_set_style_pad_gap(v, 12, 0);
+    lv_obj_set_style_pad_gap(v, SZ(12, 10), 0);
 
     lv_obj_t *c = w_card(v);
     lv_obj_set_grid_cell(c, LV_GRID_ALIGN_STRETCH, 0, 1, LV_GRID_ALIGN_STRETCH, 0, 1);
-    lv_obj_set_style_pad_row(c, 20, 0);
+    lv_obj_set_style_pad_row(c, SZ(20, 10), 0);
     lv_obj_t *h = w_row(c, 12);
     lv_obj_set_width(h, LV_PCT(100));
     lv_obj_set_flex_align(h, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_t *hc = w_col(h, 2);
-    w_label(hc, F_20, C_TXT, "Daily yield");
+    lv_obj_set_flex_grow(hc, 1);   // the summary lines shorten with "..." before the range selector
+    w_label(hc, SZ(F_20, F_18), C_TXT, "Daily yield");
     l_sum = w_label(hc, F_14, C_TXT2, "");
     l_since = w_label(hc, F_14, C_MUTED, "");
-    seg_range = w_seg(h, RANGE_MAP, 52, F_16, on_range, NULL);
-    lv_obj_set_width(seg_range, 200);
+    lv_obj_set_size(l_sum, LV_PCT(100), lv_font_get_line_height(F_14)); lv_label_set_long_mode(l_sum, LV_LABEL_LONG_DOT);
+    lv_obj_set_size(l_since, LV_PCT(100), lv_font_get_line_height(F_14)); lv_label_set_long_mode(l_since, LV_LABEL_LONG_DOT);
+    seg_range = w_seg(h, RANGE_MAP, SZ(52, 40), SZ(F_16, F_14), on_range, NULL);
+    lv_obj_set_width(seg_range, SZ(200, 140));
     lv_obj_set_style_radius(seg_range, 16, 0);
     lv_obj_set_style_pad_all(seg_range, 4, 0);
     w_seg_set(seg_range, 1);
@@ -114,7 +118,7 @@ lv_obj_t *ui_solar_create(lv_obj_t *p)
     lv_obj_set_flex_grow(chart, 1);
     lv_obj_set_flex_align(chart, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
     lv_obj_t *tc = w_col(chart, 0);
-    lv_obj_set_size(tc, 44, LV_PCT(100));
+    lv_obj_set_size(tc, SZ(44, 32), LV_PCT(100));
     lv_obj_set_style_pad_bottom(tc, 28, 0);
     lv_obj_set_flex_align(tc, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_END);
     for (int i = 0; i < 3; i++) ticks[i] = w_label(tc, F_14, C_MUTED, "");
@@ -152,30 +156,30 @@ lv_obj_t *ui_solar_create(lv_obj_t *p)
 
     lv_obj_t *d = w_card(v);
     lv_obj_set_grid_cell(d, LV_GRID_ALIGN_STRETCH, 1, 1, LV_GRID_ALIGN_STRETCH, 0, 1);
-    l_title = w_label(d, F_20, C_TXT, "Today");
+    l_title = w_label(d, SZ(F_20, F_18), C_TXT, "Today");
     l_note = w_label(d, F_14, C_MUTED, "");
-    box_data = w_col(d, 12);
+    box_data = w_col(d, SZ(12, 6));
     lv_obj_set_width(box_data, LV_PCT(100));
-    lv_obj_set_style_pad_top(box_data, 18, 0);
+    lv_obj_set_style_pad_top(box_data, SZ(18, 6), 0);
     lv_obj_t *yr = w_row(box_data, 8);
     lv_obj_set_flex_align(yr, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_END);
-    l_dy = w_label(yr, F_NUM64, C_AMBER, "--");
-    w_label(yr, F_24, C_TXT2, "kWh");
-    lv_obj_t *kv = w_col(box_data, 12);
+    l_dy = w_label(yr, SZ(F_NUM64, F_40), C_AMBER, "--");
+    w_label(yr, SZ(F_24, F_20), C_TXT2, "kWh");
+    lv_obj_t *kv = w_col(box_data, SZ(12, 6));
     lv_obj_set_width(kv, LV_PCT(100));
-    lv_obj_set_style_pad_top(kv, 10, 0);
+    lv_obj_set_style_pad_top(kv, SZ(10, 4), 0);
     l_dmw = w_kv(kv, "Max power", "W");
     l_dmv = w_kv(kv, "Max PV voltage", "V");
     box_none = w_rect(d, C_INSET, 16);
-    lv_obj_set_size(box_none, LV_PCT(100), 120);
+    lv_obj_set_size(box_none, LV_PCT(100), SZ(120, 96));
     lv_obj_center(w_label(box_none, F_22, C_MUTED, "No data"));
     w_spacer(d);
     lv_obj_t *ln = w_rect(d, C_INSET, 0);
     lv_obj_set_size(ln, LV_PCT(100), 2);
-    lv_obj_t *sc = w_col(d, 12);
+    lv_obj_t *sc = w_col(d, SZ(12, 6));
     lv_obj_set_width(sc, LV_PCT(100));
-    lv_obj_set_style_pad_top(sc, 12, 0);
-    w_label(sc, F_16, C_MUTED, "Time in charge stage");
+    lv_obj_set_style_pad_top(sc, SZ(12, 8), 0);
+    w_label(sc, SZ(F_16, F_14), C_MUTED, "Time in charge stage");
     lv_obj_t *sb = w_row(sc, 3);
     lv_obj_set_size(sb, LV_PCT(100), 12);
     static const uint32_t SC[] = { C_AMBER, C_ORANGE, C_GREEN };
@@ -187,8 +191,8 @@ lv_obj_t *ui_solar_create(lv_obj_t *p)
         lv_obj_set_flex_align(r, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
         lv_obj_t *l = w_row(r, 10);
         lv_obj_t *dot = w_rect(l, SC[i], 3); lv_obj_set_size(dot, 10, 10);
-        w_label(l, F_16, C_TXT2, SN[i]);
-        st_time[i] = w_label(r, F_18, C_TXT, "--");
+        w_label(l, SZ(F_16, F_14), C_TXT2, SN[i]);
+        st_time[i] = w_label(r, SZ(F_18, F_16), C_TXT, "--");
     }
     forecast_strip(v);
     return v;
@@ -256,8 +260,10 @@ void ui_solar_refresh(const vd_model_t *m)
     const vd_day_t *r = &rec[s_sel];
     int mins[3] = { h ? r->min_bulk : 0, h ? r->min_abs : 0, h ? r->min_float : 0 };
     static const uint32_t SC[] = { C_AMBER, C_ORANGE, C_GREEN };
+    int tot = mins[0] + mins[1] + mins[2];
     for (int i = 0; i < 3; i++) {
-        lv_obj_set_flex_grow(stk[i], h && mins[i] ? mins[i] : 1);
+        // flex grow is a uint8_t: scale the minutes (up to 1440 a day) into 1..250
+        lv_obj_set_flex_grow(stk[i], h && mins[i] ? (uint8_t)(mins[i] * 249 / tot + 1) : 1);
         w_bg(stk[i], h ? SC[i] : C_LINE);
         if (h) fmt_min(st_time[i], mins[i]); else lv_label_set_text(st_time[i], "--");
     }
