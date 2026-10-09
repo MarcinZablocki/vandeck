@@ -15,17 +15,17 @@ static void on_reboot(lv_event_t *e) { starlink_reboot(); }
 
 static void tile(lv_obj_t *g, int k, int col, int row, const char *label, const char *unit)
 {
-    lv_obj_t *t = w_rect(g, C_CARD, SZ(20, 16));
+    lv_obj_t *t = w_rect(g, C_CARD, 20);
     lv_obj_set_grid_cell(t, LV_GRID_ALIGN_STRETCH, col, 1, LV_GRID_ALIGN_STRETCH, row, 1);
-    lv_obj_set_style_pad_ver(t, SZ(16, 12), 0);
-    lv_obj_set_style_pad_hor(t, SZ(18, 12), 0);
+    lv_obj_set_style_pad_ver(t, 16, 0);
+    lv_obj_set_style_pad_hor(t, 18, 0);
     lv_obj_set_flex_flow(t, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(t, 4, 0);
     w_label(t, F_14, C_MUTED, label);
     lv_obj_t *r = w_row(t, 6);
     lv_obj_set_flex_align(r, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_END);
-    TL[k].val = w_label(r, SZ(F_36, F_30), C_TXT, "--");
-    TL[k].unit = w_label(r, SZ(F_16, F_14), C_MUTED, unit);
+    TL[k].val = w_label(r, F_36, C_TXT, "--");
+    TL[k].unit = w_label(r, F_16, C_MUTED, unit);
     TL[k].sub = w_label(t, F_14, C_MUTED, "");
     lv_obj_set_size(TL[k].sub, LV_PCT(100), lv_font_get_line_height(F_14));
     lv_label_set_long_mode(TL[k].sub, LV_LABEL_LONG_DOT);
@@ -44,22 +44,21 @@ lv_obj_t *ui_starlink_create(lv_obj_t *p)
 {
     static int32_t cols[] = { 240, LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST };
     static int32_t rows[] = { LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST };
-    if (g_compact) cols[0] = 176;
     lv_obj_t *v = w_box(p);
     lv_obj_set_size(v, LV_PCT(100), LV_PCT(100));
     lv_obj_set_grid_dsc_array(v, cols, rows);
-    lv_obj_set_style_pad_column(v, SZ(12, 10), 0);
+    lv_obj_set_style_pad_column(v, 12, 0);
 
     lv_obj_t *c = w_card(v);
     lv_obj_set_grid_cell(c, LV_GRID_ALIGN_STRETCH, 0, 1, LV_GRID_ALIGN_STRETCH, 0, 1);
-    w_label(c, SZ(F_20, F_18), C_TXT, "Starlink");
+    w_label(c, F_20, C_TXT, "Starlink");
     lv_obj_t *mid = w_col(c, 18);
     lv_obj_set_width(mid, LV_PCT(100));
     lv_obj_set_flex_grow(mid, 1);
     lv_obj_set_flex_align(mid, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_t *sr = w_row(mid, 10);
     d_status = w_dot(sr, 12, C_MUTED);
-    l_status = w_label(sr, SZ(F_26, F_22), C_MUTED, "Off");
+    l_status = w_label(sr, F_26, C_MUTED, "Off");
     l_sub = w_label(mid, F_14, C_MUTED, "");
     lv_obj_set_width(l_sub, LV_PCT(100));
     lv_obj_set_style_text_align(l_sub, LV_TEXT_ALIGN_CENTER, 0);
@@ -67,11 +66,10 @@ lv_obj_t *ui_starlink_create(lv_obj_t *p)
 
     static int32_t gc[] = { LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST };
     static int32_t gr[] = { LV_GRID_FR(1), LV_GRID_FR(1), 68, LV_GRID_TEMPLATE_LAST };
-    if (g_compact) gr[2] = 56;
     lv_obj_t *g = w_box(v);
     lv_obj_set_grid_cell(g, LV_GRID_ALIGN_STRETCH, 1, 1, LV_GRID_ALIGN_STRETCH, 0, 1);
     lv_obj_set_grid_dsc_array(g, gc, gr);
-    lv_obj_set_style_pad_gap(g, SZ(12, 10), 0);
+    lv_obj_set_style_pad_gap(g, 12, 0);
     tile(g, SL_DOWN, 0, 0, "Download", "Mbps");
     tile(g, SL_UP, 1, 0, "Upload", "Mbps");
     tile(g, SL_LAT, 2, 0, "Latency", "ms");
@@ -79,23 +77,23 @@ lv_obj_t *ui_starlink_create(lv_obj_t *p)
     tile(g, SL_PING, 1, 1, "Ping success", "%");
     tile(g, SL_OBS, 2, 1, "Obstruction", "%");
 
-    lv_obj_t *bb = w_rect(g, C_CARD, SZ(20, 16));
+    lv_obj_t *bb = w_rect(g, C_CARD, 20);
     lv_obj_set_grid_cell(bb, LV_GRID_ALIGN_STRETCH, 0, 3, LV_GRID_ALIGN_STRETCH, 2, 1);
-    lv_obj_set_style_pad_left(bb, SZ(20, 14), 0);
+    lv_obj_set_style_pad_left(bb, 20, 0);
     lv_obj_set_style_pad_right(bb, 8, 0);
     lv_obj_set_flex_flow(bb, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(bb, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_column(bb, SZ(14, 10), 0);
+    lv_obj_set_style_pad_column(bb, 14, 0);
     d_alert = w_dot(bb, 10, C_MUTED);
-    l_alert = w_label(bb, SZ(F_16, F_14), C_MUTED, "");
+    l_alert = w_label(bb, F_16, C_MUTED, "");
     lv_obj_set_flex_grow(l_alert, 1);
     lv_label_set_long_mode(l_alert, LV_LABEL_LONG_DOT);
     w_label(bb, F_14, C_MUTED, "Snow melt");
-    seg_snow = w_seg(bb, SNOW_MAP, SZ(52, 40), SZ(F_16, F_14), on_snow, NULL);
-    lv_obj_set_width(seg_snow, SZ(210, 150));
-    lv_obj_set_style_radius(seg_snow, SZ(14, 12), 0);
+    seg_snow = w_seg(bb, SNOW_MAP, 52, F_16, on_snow, NULL);
+    lv_obj_set_width(seg_snow, 210);
+    lv_obj_set_style_radius(seg_snow, 14, 0);
     lv_obj_set_style_pad_all(seg_snow, 4, 0);
-    b_reboot = w_btn(bb, SZ("Reboot dish", "Reboot"), SZ(F_16, F_14), SZ(52, 40), false, on_reboot, NULL);
+    b_reboot = w_btn(bb, "Reboot dish", F_16, 52, false, on_reboot, NULL);
     return v;
 }
 

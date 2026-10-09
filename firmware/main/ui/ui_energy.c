@@ -7,10 +7,10 @@
 #include <math.h>
 
 static lv_obj_t *l_pv, *l_pvcap, *st_bar[3], *st_lbl[3], *l_serr, *l_sbv, *l_sba, *l_scp, *l_sload, *l_yield;
-static lv_obj_t *l_tot, *l_tot_ah, *flow_dot, *l_flow, *l_flow_w, *l_flow_u;
+static lv_obj_t *l_tot, *l_tot_ah, *flow_dot, *l_flow, *l_flow_w, *l_flow_u, *l_eta, *l_eta_sub;
 static struct { lv_obj_t *fill, *pulse, *soc, *amps, *ah, *err; } B[2];
 static lv_obj_t *l_roomnow, *sp_dim[4], *h_spc, *h_logo, *h_err, *h_err_t, *h_err_fix;   // fault banner replaces spacer + logo   // setpoint controls dim with the heating switch; the room reading doesn't
-#define HEAD_H SZ(56, 40)   // every card header is this tall (the heater switch), so titles line up across the row
+#define HEAD_H 56   // both card headers are this tall (the heater switch), so titles line up
 static lv_obj_t *l_hsub, *sw_heat, *ctrls, *b_minus, *b_plus, *l_sp, *l_unit, *seg_water, *seg_fan;
 static bool s_unit_f = false;
 
@@ -63,20 +63,18 @@ static const char *solar_err_text(uint8_t e)
     }
 }
 
-// Flow pulse: a soft light band sweeping through a battery's fill, toward full while it charges and toward empty
-// while it discharges. The bar is vertical (full size) or horizontal (compact); the band's bright edge leads.
-#define PULSE_LEN SZ(56, 48)
+// Flow pulse: a soft light band sweeping up a battery's fill while it charges and down while it discharges;
+// the band's bright edge leads.
+#define PULSE_LEN 56
 static int8_t s_pulse_dir[2];
 
 static void pulse_exec(void *var, int32_t v)
 {
-    lv_obj_t *p = var, *f = lv_obj_get_parent(p);
+    lv_obj_t *p = var;
     int dir = (int)(intptr_t)lv_obj_get_user_data(p);
-    int32_t len = g_compact ? lv_obj_get_width(f) : lv_obj_get_height(f);
-    int32_t t = v * (len + PULSE_LEN) / 1000 - PULSE_LEN;   // -PULSE_LEN .. len along the bar, empty to full
-    int32_t back = len - PULSE_LEN - t;                       // the same, full to empty
-    if (g_compact) lv_obj_set_x(p, dir > 0 ? t : back);      // full is to the right
-    else lv_obj_set_y(p, dir > 0 ? back : t);                 // full is at the top
+    int32_t len = lv_obj_get_height(lv_obj_get_parent(p));
+    int32_t t = v * (len + PULSE_LEN) / 1000 - PULSE_LEN;   // -PULSE_LEN .. len, top to bottom
+    lv_obj_set_y(p, dir > 0 ? len - PULSE_LEN - t : t);       // charging moves up (toward full)
 }
 
 static lv_obj_t *pulse_create(lv_obj_t *fill)
@@ -85,8 +83,8 @@ static lv_obj_t *pulse_create(lv_obj_t *fill)
     lv_obj_t *p = w_rect(fill, C_TXT, 0);
     lv_obj_remove_flag(p, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_style_bg_grad_color(p, HEX(C_TXT), 0);
-    lv_obj_set_style_bg_grad_dir(p, g_compact ? LV_GRAD_DIR_HOR : LV_GRAD_DIR_VER, 0);
-    if (g_compact) lv_obj_set_size(p, PULSE_LEN, LV_PCT(100)); else lv_obj_set_size(p, LV_PCT(100), PULSE_LEN);
+    lv_obj_set_style_bg_grad_dir(p, LV_GRAD_DIR_VER, 0);
+    lv_obj_set_size(p, LV_PCT(100), PULSE_LEN);
     w_show(p, false);
     return p;
 }
@@ -100,10 +98,9 @@ static void pulse_set(int i, int dir)
     w_show(p, dir != 0);
     if (!dir) return;
     lv_obj_set_user_data(p, (void *)(intptr_t)dir);
-    // Gradient runs top->bottom / left->right: put the bright end on the side the band moves toward.
-    bool lead_first = g_compact ? dir < 0 : dir > 0;
-    lv_obj_set_style_bg_main_opa(p, lead_first ? LV_OPA_50 : LV_OPA_TRANSP, 0);
-    lv_obj_set_style_bg_grad_opa(p, lead_first ? LV_OPA_TRANSP : LV_OPA_50, 0);
+    // The gradient runs top to bottom: bright at the top when moving up, at the bottom when moving down.
+    lv_obj_set_style_bg_main_opa(p, dir > 0 ? LV_OPA_50 : LV_OPA_TRANSP, 0);
+    lv_obj_set_style_bg_grad_opa(p, dir > 0 ? LV_OPA_TRANSP : LV_OPA_50, 0);
     lv_anim_t a;
     lv_anim_init(&a);
     lv_anim_set_var(&a, p);
@@ -116,22 +113,19 @@ static void pulse_set(int i, int dir)
     lv_anim_start(&a);
 }
 
-static void solar_card(lv_obj_t *v)
+// Energy card, left column: what the charger reports, and how long the bank lasts at the recent draw.
+static void solar_col(lv_obj_t *c)
 {
-    lv_obj_t *c = w_card(v);
-    lv_obj_set_grid_cell(c, LV_GRID_ALIGN_STRETCH, 0, 1, LV_GRID_ALIGN_STRETCH, 0, SZ(1, 2));
-    lv_obj_set_height(w_header(c, "Solar", "SmartSolar 100/30", NULL), HEAD_H);
     lv_obj_t *r = w_row(c, 8);
-    lv_obj_set_style_pad_top(r, SZ(20, 8), 0);
     lv_obj_set_flex_align(r, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_END);
-    l_pv = w_label(r, SZ(F_NUM92, F_NUM64), C_AMBER, "--");
-    w_label(r, SZ(F_30, F_24), C_TXT2, "W");
-    l_pvcap = w_label(c, SZ(F_16, F_14), C_MUTED, "PV power");
-    lv_obj_set_style_pad_top(l_pvcap, SZ(8, 4), 0);
+    l_pv = w_label(r, F_NUM92, C_AMBER, "--");
+    w_label(r, F_30, C_TXT2, "W");
+    l_pvcap = w_label(c, F_16, C_MUTED, "PV power");
+    lv_obj_set_style_pad_top(l_pvcap, 8, 0);
 
     lv_obj_t *g = w_row(c, 6);
     lv_obj_set_width(g, LV_PCT(100));
-    lv_obj_set_style_pad_top(g, SZ(28, 16), 0);
+    lv_obj_set_style_pad_top(g, 24, 0);
     static const char *names[] = { "Bulk", "Absorb", "Float" };
     for (int i = 0; i < 3; i++) {
         lv_obj_t *col = w_col(g, 8);
@@ -144,12 +138,19 @@ static void solar_card(lv_obj_t *v)
     lv_obj_set_width(l_serr, LV_PCT(100));
     lv_label_set_long_mode(l_serr, LV_LABEL_LONG_WRAP);
     w_show(l_serr, false);
+
     w_spacer(c);
+    lv_obj_t *et = w_col(c, 2);
+    w_label(et, F_14, C_MUTED, "Battery time");
+    l_eta = w_label(et, F_26, C_TXT, "--");
+    l_eta_sub = w_label(et, F_14, C_MUTED, "");
+    w_spacer(c);
+
     lv_obj_t *ln = w_rect(c, C_INSET, 0);
     lv_obj_set_size(ln, LV_PCT(100), 2);
-    lv_obj_t *kv = w_col(c, SZ(14, 8));
+    lv_obj_t *kv = w_col(c, 12);
     lv_obj_set_width(kv, LV_PCT(100));
-    lv_obj_set_style_pad_top(kv, SZ(14, 10), 0);
+    lv_obj_set_style_pad_top(kv, 14, 0);
     // Everything the charger's instant readout carries (it has no PV voltage or temperature).
     l_sbv = w_kv(kv, "Battery", "V");
     l_sba = w_kv(kv, "Charge current", "A");
@@ -159,18 +160,9 @@ static void solar_card(lv_obj_t *v)
     l_yield = w_kv(kv, "Yield today", "kWh");
 }
 
-
-
-static void battery_card_full(lv_obj_t *c)
+// Energy card, right column: which way the bank's power flows, and each battery.
+static void battery_col(lv_obj_t *c)
 {
-    lv_obj_set_style_pad_row(c, 20, 0);
-    lv_obj_t *h = w_header(c, "Batteries", "", &l_tot_ah);   // subtitle: charge left / capacity
-    lv_obj_set_height(h, HEAD_H);
-    lv_obj_t *rr = w_row(h, 2);
-    lv_obj_set_flex_align(rr, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_END);
-    l_tot = w_label(rr, F_30, C_TXT, "--");
-    w_label(rr, F_16, C_MUTED, "%");
-
     lv_obj_t *fl = w_rect(c, C_INSET, 16);
     lv_obj_set_size(fl, LV_PCT(100), 52);
     lv_obj_set_style_pad_hor(fl, 12, 0);
@@ -217,122 +209,77 @@ static void battery_card_full(lv_obj_t *c)
     }
 }
 
-// Compact: the charge direction moves into the header, and each battery gets half the width with a small
-// horizontal bar, so the card stays short enough for the heater underneath.
-static void battery_card_compact(lv_obj_t *c)
-{
-    lv_obj_set_style_pad_ver(c, 14, 0);
-    lv_obj_t *h = w_row(c, 10);
-    lv_obj_set_size(h, LV_PCT(100), HEAD_H);
-    lv_obj_set_flex_align(h, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_t *hl = w_col(h, 2);
-    w_label(hl, F_18, C_TXT, "Batteries");
-    lv_obj_t *fr = w_row(hl, 6);
-    flow_dot = w_dot(fr, 8, C_MUTED);
-    l_flow = w_label(fr, F_14, C_MUTED, "Idle");
-    l_flow_w = w_label(fr, F_14, C_TXT, "0");
-    l_flow_u = w_label(fr, F_14, C_MUTED, "W");
-    lv_obj_t *hr = w_row(h, 10);
-    lv_obj_set_flex_align(hr, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_END);
-    l_tot_ah = w_label(hr, F_14, C_MUTED, "");
-    lv_obj_t *rr = w_row(hr, 2);
-    lv_obj_set_flex_align(rr, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_END);
-    l_tot = w_label(rr, F_26, C_TXT, "--");
-    w_label(rr, F_14, C_MUTED, "%");
-
-    w_spacer(c);
-    static int32_t cols[] = { LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST };
-    static int32_t rows[] = { LV_GRID_CONTENT, LV_GRID_TEMPLATE_LAST };
-    lv_obj_t *g = w_box(c);
-    lv_obj_set_width(g, LV_PCT(100));
-    lv_obj_set_grid_dsc_array(g, cols, rows);
-    lv_obj_set_style_pad_column(g, 20, 0);
-    for (int i = 0; i < 2; i++) {
-        lv_obj_t *col = w_col(g, 4);
-        lv_obj_set_grid_cell(col, LV_GRID_ALIGN_STRETCH, i, 1, LV_GRID_ALIGN_START, 0, 1);
-        lv_obj_t *r1 = w_row(col, 6);   // name ... SOC
-        lv_obj_set_width(r1, LV_PCT(100));
-        lv_obj_set_flex_align(r1, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_END);
-        lv_obj_t *nr = w_row(r1, 6);
-        w_label(nr, F_14, C_MUTED, i ? "Battery 2" : "Battery 1");
-        B[i].err = w_label(nr, F_14, C_RED, LV_SYMBOL_WARNING);
-        w_show(B[i].err, false);
-        lv_obj_t *sr = w_row(r1, 2);
-        lv_obj_set_flex_align(sr, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_END);
-        B[i].soc = w_label(sr, F_22, C_TXT, "--");
-        w_label(sr, F_14, C_MUTED, "%");
-        lv_obj_t *bar = w_rect(col, C_INSET, 5);
-        lv_obj_set_size(bar, LV_PCT(100), 10);
-        B[i].fill = w_rect(bar, C_GREEN, 5);
-        lv_obj_set_size(B[i].fill, LV_PCT(0), LV_PCT(100));
-        lv_obj_align(B[i].fill, LV_ALIGN_LEFT_MID, 0, 0);
-        B[i].pulse = pulse_create(B[i].fill);
-        lv_obj_t *r3 = w_row(col, 6);   // amps ... Ah
-        lv_obj_set_width(r3, LV_PCT(100));
-        lv_obj_set_flex_align(r3, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-        B[i].amps = w_label(r3, F_14, C_MUTED, "");
-        B[i].ah = w_label(r3, F_14, C_TXT2, "");
-    }
-    w_spacer(c);
-}
-
-static void battery_card(lv_obj_t *v)
+// Solar and batteries in one card: the bank's charge in the header, the charger left, the batteries right.
+static void energy_card(lv_obj_t *v)
 {
     lv_obj_t *c = w_card(v);
-    lv_obj_set_grid_cell(c, LV_GRID_ALIGN_STRETCH, 1, 1, LV_GRID_ALIGN_STRETCH, 0, 1);
-    if (g_compact) battery_card_compact(c); else battery_card_full(c);
+    lv_obj_set_grid_cell(c, LV_GRID_ALIGN_STRETCH, 0, 1, LV_GRID_ALIGN_STRETCH, 0, 1);
+    lv_obj_set_style_pad_row(c, 20, 0);
+    lv_obj_t *h = w_header(c, "Energy", "SmartSolar 100/30", NULL);
+    lv_obj_set_height(h, HEAD_H);
+    lv_obj_t *hr = w_row(h, 10);
+    lv_obj_set_flex_align(hr, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_END);
+    l_tot_ah = w_label(hr, F_14, C_MUTED, "");   // charge left / capacity
+    lv_obj_t *rr = w_row(hr, 2);
+    lv_obj_set_flex_align(rr, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_END);
+    l_tot = w_label(rr, F_30, C_TXT, "--");
+    w_label(rr, F_16, C_MUTED, "%");
+
+    static int32_t cols[] = { LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST };
+    static int32_t rows[] = { LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST };
+    lv_obj_t *body = w_box(c);
+    lv_obj_set_width(body, LV_PCT(100));
+    lv_obj_set_flex_grow(body, 1);
+    lv_obj_set_grid_dsc_array(body, cols, rows);
+    lv_obj_set_style_pad_column(body, 28, 0);
+    lv_obj_t *left = w_col(body, 0), *right = w_col(body, 16);
+    lv_obj_set_grid_cell(left, LV_GRID_ALIGN_STRETCH, 0, 1, LV_GRID_ALIGN_STRETCH, 0, 1);
+    lv_obj_set_grid_cell(right, LV_GRID_ALIGN_STRETCH, 1, 1, LV_GRID_ALIGN_STRETCH, 0, 1);
+    solar_col(left);
+    battery_col(right);
 }
 
 static void heater_card(lv_obj_t *v)
 {
     lv_obj_t *c = w_card(v);
-    // Compact: content height in an auto-sized row (a stretched card would size that row to itself and keep it).
-    if (g_compact) lv_obj_set_grid_cell(c, LV_GRID_ALIGN_STRETCH, 1, 1, LV_GRID_ALIGN_START, 1, 1);
-    else lv_obj_set_grid_cell(c, LV_GRID_ALIGN_STRETCH, 2, 1, LV_GRID_ALIGN_STRETCH, 0, 1);
-    lv_obj_set_style_pad_row(c, SZ(20, 8), 0);
-    if (g_compact) lv_obj_set_style_pad_ver(c, 14, 0);
-    lv_obj_t *h = w_header(c, "Heater", "", &l_hsub);   // subtitle: what the Truma is doing
+    lv_obj_set_grid_cell(c, LV_GRID_ALIGN_STRETCH, 1, 1, LV_GRID_ALIGN_STRETCH, 0, 1);
+    lv_obj_set_style_pad_row(c, 20, 0);
+    lv_obj_t *h = w_header(c, "Heating", "", &l_hsub);   // subtitle: what the Truma is doing
     lv_obj_set_height(h, HEAD_H);
     lv_obj_set_flex_grow(lv_obj_get_parent(l_hsub), 1);   // the status line shortens with "..." before the switch
     lv_obj_set_size(l_hsub, LV_PCT(100), lv_font_get_line_height(F_14));
     lv_label_set_long_mode(l_hsub, LV_LABEL_LONG_DOT);
     sw_heat = w_switch(h, on_heat, NULL);
 
-    ctrls = w_col(c, SZ(20, 8));
+    ctrls = w_col(c, 18);
     lv_obj_set_width(ctrls, LV_PCT(100));
-    lv_obj_t *sp = w_rect(ctrls, C_INSET, SZ(20, 14));
+    lv_obj_t *sp = w_rect(ctrls, C_INSET, 18);
     lv_obj_set_size(sp, LV_PCT(100), LV_SIZE_CONTENT);
-    lv_obj_set_style_pad_all(sp, SZ(12, 6), 0);
+    lv_obj_set_style_pad_all(sp, 10, 0);
     lv_obj_set_flex_flow(sp, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(sp, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    b_minus = w_btn(sp, "-", SZ(F_40, F_30), SZ(76, 48), false, on_step, (void *)-1);
-    lv_obj_set_width(b_minus, SZ(68, 56)); w_bg(b_minus, C_BTN); lv_obj_set_style_radius(b_minus, SZ(16, 12), 0);
-    // Full size: setpoint over its caption and the room reading. Compact: side by side, one row high.
-    lv_obj_t *mid = g_compact ? w_row(sp, 14) : w_col(sp, 4);
+    b_minus = w_btn(sp, "-", F_36, 72, false, on_step, (void *)-1);
+    lv_obj_set_width(b_minus, 56); w_bg(b_minus, C_BTN); lv_obj_set_style_radius(b_minus, 14, 0);
+    lv_obj_set_style_pad_hor(b_minus, 0, 0);
+    lv_obj_t *mid = w_col(sp, 2);
     lv_obj_set_flex_align(mid, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_t *r = w_row(mid, 2);
     lv_obj_set_flex_align(r, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
-    l_sp = w_label(r, SZ(F_48, F_36), C_ORANGE, "--");
-    l_unit = w_label(r, SZ(F_28, F_20), C_TXT2, "°C");
-    lv_obj_t *cc = g_compact ? w_col(mid, 0) : mid;
-    lv_obj_t *cap = w_label(cc, F_14, C_MUTED, "Room setpoint");
-    l_roomnow = w_label(cc, SZ(F_16, F_14), C_TXT2, "");
-    b_plus = w_btn(sp, "+", SZ(F_40, F_30), SZ(76, 48), false, on_step, (void *)1);
-    lv_obj_set_width(b_plus, SZ(68, 56)); w_bg(b_plus, C_BTN); lv_obj_set_style_radius(b_plus, SZ(16, 12), 0);
+    l_sp = w_label(r, F_40, C_ORANGE, "--");
+    l_unit = w_label(r, F_24, C_TXT2, "°C");
+    lv_obj_t *cap = w_label(mid, F_14, C_MUTED, "Room setpoint");
+    l_roomnow = w_label(mid, F_14, C_TXT2, "");
+    b_plus = w_btn(sp, "+", F_36, 72, false, on_step, (void *)1);
+    lv_obj_set_width(b_plus, 56); w_bg(b_plus, C_BTN); lv_obj_set_style_radius(b_plus, 14, 0);
+    lv_obj_set_style_pad_hor(b_plus, 0, 0);
     sp_dim[0] = b_minus; sp_dim[1] = r; sp_dim[2] = cap; sp_dim[3] = b_plus;
 
-    // Full size: label over the selector. Compact: label beside it.
-    lv_obj_t *wg = g_compact ? w_row(ctrls, 10) : w_col(ctrls, 10); lv_obj_set_width(wg, LV_PCT(100));
-    lv_obj_t *wl = w_label(wg, SZ(F_16, F_14), C_MUTED, "Hot water");
-    seg_water = w_seg(wg, WATER_C, SZ(68, 40), SZ(F_18, F_16), on_water, NULL);
-    lv_obj_t *fg = g_compact ? w_row(ctrls, 10) : w_col(ctrls, 10); lv_obj_set_width(fg, LV_PCT(100));
-    lv_obj_t *fl = w_label(fg, SZ(F_16, F_14), C_MUTED, "Fan");
-    seg_fan = w_seg(fg, FAN_MAP, SZ(68, 40), SZ(F_18, F_16), on_fan, NULL);
-    if (g_compact) {
-        lv_obj_set_width(wl, 72); lv_obj_set_width(fl, 72);
-        lv_obj_set_width(seg_water, 0); lv_obj_set_flex_grow(seg_water, 1);
-        lv_obj_set_width(seg_fan, 0); lv_obj_set_flex_grow(seg_fan, 1);
-    }
+    lv_obj_t *wg = w_col(ctrls, 8); lv_obj_set_width(wg, LV_PCT(100));
+    w_label(wg, F_16, C_MUTED, "Hot water");
+    seg_water = w_seg(wg, WATER_C, 60, F_16, on_water, NULL);
+    lv_obj_t *fg = w_col(ctrls, 8); lv_obj_set_width(fg, LV_PCT(100));
+    w_label(fg, F_16, C_MUTED, "Fan");
+    seg_fan = w_seg(fg, FAN_MAP, 60, F_16, on_fan, NULL);
 
     h_spc = w_spacer(c);
     lv_obj_t *logo = h_logo = w_row(c, 10);
@@ -340,7 +287,7 @@ static void heater_card(lv_obj_t *v)
     lv_obj_set_flex_align(logo, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     w_tinted_image(logo, &img_logo_160, C_FAINT);
 
-    // Truma fault: code and cause, then what to do (two lines at most; the reset hint is in the header)
+    // Truma fault: code and cause, then what to do (the reset hint is in the header)
     h_err = w_rect(c, C_INSET, 16);
     lv_obj_set_size(h_err, LV_PCT(100), LV_SIZE_CONTENT);
     lv_obj_set_style_pad_all(h_err, 12, 0);
@@ -348,28 +295,64 @@ static void heater_card(lv_obj_t *v)
     lv_obj_set_flex_flow(h_err, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(h_err, 4, 0);
     h_err_t = w_label(h_err, F_16, C_RED, "");
+    lv_obj_set_width(h_err_t, LV_PCT(100));
+    lv_label_set_long_mode(h_err_t, LV_LABEL_LONG_WRAP);
     h_err_fix = w_label(h_err, F_14, C_TXT2, "");
     lv_obj_set_width(h_err_fix, LV_PCT(100));
     lv_label_set_long_mode(h_err_fix, LV_LABEL_LONG_WRAP);
     w_show(h_err, false);
 }
 
+// Time left (or to full) at the recent average bank current: an exponential average with a 15 min time constant,
+// so a kettle or the heater fan doesn't swing it. Fed from the UI tick on every page.
+#define AVG_TAU_S   (15 * 60.0f)
+#define AVG_MIN_S   60           // nothing until a minute of data is in
+#define AVG_IDLE_A  0.3f         // below this, no estimate
+static float s_avg_a; static int64_t s_avg_at, s_avg_since;
 
+void ui_energy_track(const vd_model_t *m)
+{
+    float a = 0; int n = 0;
+    for (int i = 0; i < 2; i++) if (m->batt[i].valid && !m->batt[i].stale) { a += m->batt[i].amps; n++; }
+    int64_t t = now_us();
+    if (!n) { s_avg_at = 0; return; }
+    if (!s_avg_at) { s_avg_a = a; s_avg_at = s_avg_since = t; return; }
+    float dt = (t - s_avg_at) / 1e6f;
+    if (dt <= 0) return;
+    // Until a full time constant of data is in, a plain running mean: the exponential average alone would start from
+    // the first reading and creep (a small draw stayed under AVG_IDLE_A for minutes after boot).
+    float k = 1 - expf(-dt / AVG_TAU_S), el = (t - s_avg_since) / 1e6f;
+    if (el < AVG_TAU_S && dt / el > k) k = dt / el;
+    s_avg_a += (a - s_avg_a) * k;
+    s_avg_at = t;
+}
+
+// The Battery time block: "9 days" + "left at the recent draw", "3 h" + "to full", or "--" + why not.
+static void refresh_eta(bool have, float ah, float full)
+{
+    const char *why = !have ? "no battery data"
+                    : !s_avg_at || now_us() - s_avg_since < AVG_MIN_S * 1000000LL ? "averaging the draw"
+                    : fabsf(s_avg_a) < AVG_IDLE_A ? "idle" : NULL;
+    bool chg = s_avg_a > 0;
+    float h = why ? -1 : chg ? (full - ah) / s_avg_a : ah / -s_avg_a;
+    if (!why && h < 0) why = "idle";
+    if (why) { lv_label_set_text(l_eta, "--"); lv_label_set_text(l_eta_sub, why); return; }
+    if (h < 1) w_fmt(l_eta, "%d min", (int)(h * 60 + 0.5f) < 1 ? 1 : (int)(h * 60 + 0.5f));
+    else if (h < 48) w_fmt(l_eta, "%d h", (int)(h + 0.5f));
+    else w_fmt(l_eta, "%d days", (int)(h / 24 + 0.5f));
+    lv_label_set_text(l_eta_sub, chg ? "to full, at the recent charge" : "left at the recent draw");
+}
 
 lv_obj_t *ui_energy_create(lv_obj_t *p)
 {
-    // Full size: solar | batteries | heater. Compact: solar | batteries over a shorter heater panel.
-    static int32_t cols[] = { 256, 248, LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST };
+    // Energy (solar and batteries) on 2/3, heating on 1/3.
+    static int32_t cols[] = { LV_GRID_FR(2), LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST };
     static int32_t rows[] = { LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST };
-    static int32_t cols_c[] = { 236, LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST };
-    static int32_t rows_c[] = { LV_GRID_FR(1), LV_GRID_CONTENT, LV_GRID_TEMPLATE_LAST };
     lv_obj_t *v = w_box(p);
     lv_obj_set_size(v, LV_PCT(100), LV_PCT(100));
-    lv_obj_set_grid_dsc_array(v, SZ(cols, cols_c), SZ(rows, rows_c));
-    lv_obj_set_style_pad_column(v, SZ(12, 10), 0);
-    lv_obj_set_style_pad_row(v, 10, 0);
-    solar_card(v);
-    battery_card(v);
+    lv_obj_set_grid_dsc_array(v, cols, rows);
+    lv_obj_set_style_pad_column(v, 12, 0);
+    energy_card(v);
     heater_card(v);
     return v;
 }
@@ -400,7 +383,7 @@ void ui_energy_refresh(const vd_model_t *m)
         const vd_batt_t *b = &m->batt[i];
         if (!b->valid) {
             lv_label_set_text(B[i].soc, "--"); lv_label_set_text(B[i].amps, ""); lv_label_set_text(B[i].ah, "");
-            if (g_compact) lv_obj_set_width(B[i].fill, 0); else lv_obj_set_height(B[i].fill, 0);
+            lv_obj_set_height(B[i].fill, 0);
             w_show(B[i].err, false);
             pulse_set(i, 0);
             continue;
@@ -408,8 +391,7 @@ void ui_energy_refresh(const vd_model_t *m)
         w_show(B[i].err, b->stale);
         nv++; soc_sum += b->soc; ah += b->remain_ah; full += b->full_ah; net += b->volts * b->amps;
         w_fmt(B[i].soc, "%d", (int)lroundf(b->soc));
-        if (g_compact) lv_obj_set_width(B[i].fill, LV_PCT((int)b->soc));
-        else lv_obj_set_height(B[i].fill, LV_PCT((int)b->soc));
+        lv_obj_set_height(B[i].fill, LV_PCT((int)b->soc));
         w_bg(B[i].fill, b->soc < 20 ? C_RED : C_GREEN);
         // No motion for a stale reading, or while the screen is off (nothing to see, and it would keep LVGL drawing).
         pulse_set(i, b->stale || ui_screen_is_off() ? 0 : b->amps > 0.05f ? 1 : b->amps < -0.05f ? -1 : 0);
@@ -424,6 +406,7 @@ void ui_energy_refresh(const vd_model_t *m)
         w_color(l_tot, avg < 20 ? C_RED : C_TXT);
         w_fmt(l_tot_ah, "%d / %d Ah", (int)lroundf(ah), (int)lroundf(full));
     } else { lv_label_set_text(l_tot, "--"); lv_label_set_text(l_tot_ah, "No battery data"); }
+    refresh_eta(nv > 0, ah, full);
     int mode = !nv || fabsf(net) < 10 ? 0 : net > 0 ? 1 : 2;
     uint32_t fc = mode == 1 ? C_GREEN : mode == 2 ? C_ORANGE : C_MUTED;
     w_bg(flow_dot, fc); w_color(l_flow, fc);
@@ -446,15 +429,13 @@ void ui_energy_refresh(const vd_model_t *m)
     bool fault = m->heater.link && m->heater.err;
     uint32_t hc = m->heater.warn ? C_AMBER : C_RED;
     w_color(l_hsub, fault ? hc : C_MUTED);
-    // Compact has no room for the fault box or the logo: the header line carries the fault instead.
-    w_show(h_err, fault && !g_compact); w_show(h_logo, !fault && !g_compact); w_show(h_spc, !fault && !g_compact);
+    w_show(h_err, fault); w_show(h_logo, !fault);
     if (fault) {
         const char *fix, *t = truma_err_text(m->heater.err, &fix);
         w_fmt(h_err_t, "%c %u  -  %s", m->heater.warn ? 'W' : 'E', m->heater.err, t);
         w_color(h_err_t, hc);
         lv_obj_set_style_border_color(h_err, HEX(hc), 0);
         lv_label_set_text(h_err_fix, fix);
-        if (g_compact) w_fmt(l_hsub, "%c%u %s", m->heater.warn ? 'W' : 'E', m->heater.err, t);
     }
     for (int i = 0; i < 4; i++) lv_obj_set_style_opa(sp_dim[i], on ? LV_OPA_COVER : LV_OPA_40, 0);
     w_enable(b_minus, on); w_enable(b_plus, on); w_enable(seg_water, true); w_enable(seg_fan, true);

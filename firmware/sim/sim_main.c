@@ -1,6 +1,7 @@
-// VanDeck UI on the desktop at another resolution: an 800x480 LCD (--lcd) or e-paper panel (Waveshare 7.5" V2).
+// VanDeck UI on the desktop: as the 1024x600 LCD (--lcd), or through an e-paper filter (e.g. --size 800x480 for a
+// Waveshare 7.5" V2). The UI is laid out for 1024x600; other sizes show what clips.
 //
-// The real ui/*.c renders into an 800x480 ARGB buffer; every finished frame goes through an e-ink filter before it
+// The real ui/*.c renders into an ARGB buffer of the chosen size; every finished frame goes through an e-ink filter before it
 // reaches the SDL window. Keys:
 //   --shots DIR renders every page in every mode to BMPs and exits.
 //   1 colour (no filter)   2 1-bit threshold   3 1-bit dithered   4 4-level grey
@@ -20,12 +21,13 @@
 
 #define MAXW 1280
 #define MAXH 800
-static int W = 800, H = 480;
+static int W = 1024, H = 600;
 static bool s_lcd;                  // plain LCD: colour, every frame shown as rendered
 
 enum { MODE_COLOR = 1, MODE_BW, MODE_DITHER, MODE_GRAY4 };
 static int s_mode = MODE_BW, s_scale = 1;
 static bool s_invert, s_refresh_sim = true;
+static int s_warmup_ms = 2500;      // --warmup SEC: let averages build up before --shots
 
 static uint32_t s_fb[MAXW * MAXH];        // LVGL renders here (XRGB8888)
 static uint32_t s_out[MAXW * MAXH];       // what the "panel" shows
@@ -181,7 +183,7 @@ static int shots(const char *dir)
 {
     static const char *VIEW[] = { "energy", "solar", "tanks", "starlink", "weather" };
     static const char *MODE[] = { "", "colour", "bw", "dither", "gray4" };
-    run_for(2500);
+    run_for(s_warmup_ms);
     for (int v = 0; v < V_COUNT; v++) {
         ui_show_view(v);
         run_for(400);
@@ -245,6 +247,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--mode") && i + 1 < argc) s_mode = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--invert")) s_invert = true;
         else if (!strcmp(argv[i], "--no-refresh")) s_refresh_sim = false;
+        else if (!strcmp(argv[i], "--warmup") && i + 1 < argc) s_warmup_ms = atoi(argv[++i]) * 1000;
         else if (!strcmp(argv[i], "--lcd")) { s_lcd = true; s_mode = MODE_COLOR; s_refresh_sim = false; }
         else if (!strcmp(argv[i], "--size") && i + 1 < argc) sscanf(argv[++i], "%dx%d", &W, &H);
     }

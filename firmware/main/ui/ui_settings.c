@@ -187,24 +187,24 @@ static lv_obj_t *list_row(lv_obj_t *p, int h)
 
 static void build_devices(lv_obj_t *p)
 {
-    dv_main = w_col(p, SZ(16, 8));
+    dv_main = w_col(p, 16);
     lv_obj_set_size(dv_main, LV_PCT(100), LV_PCT(100));
     lv_obj_t *hc = w_col(dv_main, 2);
-    w_label(hc, SZ(F_20, F_18), C_TXT, "Bluetooth devices");
+    w_label(hc, F_20, C_TXT, "Bluetooth devices");
     dv_sum = w_label(hc, F_14, C_MUTED, "");
-    lv_obj_t *list = w_col(dv_main, SZ(6, 4));
+    lv_obj_t *list = w_col(dv_main, 6);
     lv_obj_set_width(list, LV_PCT(100));
     for (int r = 0; r < ROLE_COUNT; r++) {
-        lv_obj_t *row = list_row(list, SZ(80, 72));
+        lv_obj_t *row = list_row(list, 80);
         lv_obj_t *l = w_row(row, 14);
         dv_dot[r] = w_dot(l, 10, C_FAINT);
         lv_obj_t *c = w_col(l, 2);
         dv_role[r] = w_label(c, F_14, C_MUTED, role_name(r));
-        dv_name[r] = w_label(c, SZ(F_18, F_16), C_TXT, "");
+        dv_name[r] = w_label(c, F_18, C_TXT, "");
         dv_meta[r] = w_label(c, F_14, C_MUTED, "");
         lv_obj_t *bt = w_row(row, 6);
-        dv_b1[r] = w_btn(bt, "Pair", F_16, SZ(48, 40), true, on_pair, (void *)(intptr_t)r);
-        dv_b2[r] = w_btn(bt, "Forget", F_16, SZ(48, 40), false, on_forget, (void *)(intptr_t)r);
+        dv_b1[r] = w_btn(bt, "Pair", F_16, 48, true, on_pair, (void *)(intptr_t)r);
+        dv_b2[r] = w_btn(bt, "Forget", F_16, 48, false, on_forget, (void *)(intptr_t)r);
     }
 
     dv_pick = w_col(p, 16);
@@ -464,12 +464,12 @@ static void on_upd_install(lv_event_t *e) { update_svc_install(); }
 static void build_about(lv_obj_t *p)
 {
     w_tinted_image(p, &img_logo_160, C_TXT2);
-    lv_obj_t *cols = w_row(p, SZ(24, 16));
+    lv_obj_t *cols = w_row(p, 24);
     lv_obj_set_width(cols, LV_PCT(100));
     lv_obj_set_flex_align(cols, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
-    lv_obj_t *kv = w_col(cols, SZ(14, 10));
-    lv_obj_set_width(kv, SZ(372, 300));
-    lv_obj_set_style_pad_top(kv, SZ(8, 4), 0);
+    lv_obj_t *kv = w_col(cols, 14);
+    lv_obj_set_width(kv, 372);
+    lv_obj_set_style_pad_top(kv, 8, 0);
     ab_ver = w_kv(kv, "Firmware version", "");
     ab_built = w_kv(kv, "Built", "");
     ab_upd = w_kv(kv, "Last update", "");
@@ -481,7 +481,7 @@ static void build_about(lv_obj_t *p)
     lv_obj_t *u = w_col(cols, 12);
     lv_obj_set_flex_grow(u, 1);
     w_header(u, "Updates", update_svc_enabled() ? "From GitHub releases" : "No repository set (menuconfig)", NULL);
-    up_seg = w_seg(u, UPD_MAP, SZ(56, 44), SZ(F_16, F_14), on_upd_mode, NULL);
+    up_seg = w_seg(u, UPD_MAP, 56, F_16, on_upd_mode, NULL);
     up_st = w_label(u, F_16, C_TXT2, "");
     up_hint = w_label(u, F_14, C_MUTED, "");
     for (lv_obj_t **l = (lv_obj_t *[]){ up_st, up_hint, NULL }; *l; l++) {
@@ -489,14 +489,14 @@ static void build_about(lv_obj_t *p)
         lv_label_set_long_mode(*l, LV_LABEL_LONG_WRAP);
     }
     lv_obj_t *br = w_row(u, 10);
-    up_check = w_btn(br, "Check now", F_16, SZ(48, 40), false, on_upd_check, NULL);
-    up_inst = w_btn(br, "Install", F_16, SZ(48, 40), true, on_upd_install, NULL);
+    up_check = w_btn(br, "Check now", F_16, 48, false, on_upd_check, NULL);
+    up_inst = w_btn(br, "Install", F_16, 48, true, on_upd_install, NULL);
     if (!update_svc_enabled()) { w_enable(up_seg, false); w_show(br, false); }
 
     lv_obj_t *fn = w_label(p, F_14, C_MUTED, "Update over Wi-Fi: tools/ota.sh  -  console: tools/console.sh (vandeck.local:23)");
     lv_obj_set_style_pad_top(fn, 8, 0);
     for (lv_obj_t **l = (lv_obj_t *[]){ ab_ver, ab_built, ab_upd, ab_slot, ab_ip, ab_up, NULL }; *l; l++)
-        lv_obj_set_style_text_font(*l, SZ(F_18, F_16), 0);
+        lv_obj_set_style_text_font(*l, F_18, 0);
 }
 
 static void fmt_when(char *b, size_t n, time_t t)
@@ -598,7 +598,7 @@ static void build_solar(lv_obj_t *p)
     lv_obj_t *h = w_header(p, "System efficiency", "Share of that rating that reaches the battery: heat, wiring and charger losses", NULL);
     lv_obj_set_style_pad_top(h, 8, 0);
     sv_eff = stepper(p, on_pv_eff);
-    sv_ex = w_label(p, SZ(F_16, F_14), C_MUTED, "");
+    sv_ex = w_label(p, F_16, C_MUTED, "");
     lv_obj_set_style_pad_top(sv_ex, 8, 0);
     lv_obj_set_width(sv_ex, LV_PCT(100));
     lv_label_set_long_mode(sv_ex, LV_LABEL_LONG_WRAP);
@@ -617,47 +617,46 @@ void ui_settings_create(void)
     s_root = w_rect(lv_layer_top(), C_BG, 0);
     lv_obj_set_size(s_root, LV_PCT(100), LV_PCT(100));
     lv_obj_add_flag(s_root, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_style_pad_hor(s_root, SZ(16, 10), 0);
-    lv_obj_set_style_pad_bottom(s_root, SZ(16, 10), 0);
+    lv_obj_set_style_pad_hor(s_root, 16, 0);
+    lv_obj_set_style_pad_bottom(s_root, 16, 0);
     lv_obj_set_flex_flow(s_root, LV_FLEX_FLOW_COLUMN);
     lv_obj_t *h = w_row(s_root, 12);
-    lv_obj_set_size(h, LV_PCT(100), SZ(60, 52));
+    lv_obj_set_size(h, LV_PCT(100), 60);
     lv_obj_set_flex_align(h, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    w_label(h, SZ(F_26, F_22), C_TXT, "Settings");
-    lv_obj_t *done = w_btn(h, "Done", F_16, SZ(44, 40), true, on_done, NULL);
-    lv_obj_set_style_radius(done, SZ(22, 20), 0);
+    w_label(h, F_26, C_TXT, "Settings");
+    lv_obj_t *done = w_btn(h, "Done", F_16, 44, true, on_done, NULL);
+    lv_obj_set_style_radius(done, 22, 0);
 
     static int32_t cols[] = { 240, LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST };
     static int32_t rows[] = { LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST };
-    if (g_compact) cols[0] = 184;
     lv_obj_t *body = w_box(s_root);
     lv_obj_set_width(body, LV_PCT(100));
     lv_obj_set_flex_grow(body, 1);
     lv_obj_set_grid_dsc_array(body, cols, rows);
-    lv_obj_set_style_pad_column(body, SZ(12, 10), 0);
+    lv_obj_set_style_pad_column(body, 12, 0);
 
-    lv_obj_t *tl = w_rect(body, C_CARD, SZ(24, 18));
+    lv_obj_t *tl = w_rect(body, C_CARD, 24);
     lv_obj_set_grid_cell(tl, LV_GRID_ALIGN_STRETCH, 0, 1, LV_GRID_ALIGN_STRETCH, 0, 1);
-    lv_obj_set_style_pad_all(tl, SZ(12, 8), 0);
+    lv_obj_set_style_pad_all(tl, 12, 0);
     lv_obj_set_flex_flow(tl, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_row(tl, SZ(6, 4), 0);
+    lv_obj_set_style_pad_row(tl, 6, 0);
     for (int i = 0; i < TAB_N; i++) {
-        lv_obj_t *b = tabs[i] = w_rect(tl, C_BTN, SZ(16, 12));
+        lv_obj_t *b = tabs[i] = w_rect(tl, C_BTN, 16);
         lv_obj_add_flag(b, LV_OBJ_FLAG_CLICKABLE);
-        lv_obj_set_size(b, LV_PCT(100), SZ(54, 44));   // eight tabs have to fit above the bottom edge
-        lv_obj_set_style_pad_hor(b, SZ(20, 12), 0);
+        lv_obj_set_size(b, LV_PCT(100), 54);   // eight tabs have to fit above the bottom edge
+        lv_obj_set_style_pad_hor(b, 20, 0);
         lv_obj_set_flex_flow(b, LV_FLEX_FLOW_ROW);
         lv_obj_set_flex_align(b, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
         lv_obj_add_event_cb(b, on_tab, LV_EVENT_CLICKED, (void *)(intptr_t)i);
-        w_label(b, SZ(F_18, F_16), C_TXT2, TAB_NAMES[i]);
+        w_label(b, F_18, C_TXT2, TAB_NAMES[i]);
         tab_meta[i] = w_label(b, F_14, C_MUTED, "");
     }
 
-    lv_obj_t *pane = w_rect(body, C_CARD, SZ(24, 18));
+    lv_obj_t *pane = w_rect(body, C_CARD, 24);
     lv_obj_set_grid_cell(pane, LV_GRID_ALIGN_STRETCH, 1, 1, LV_GRID_ALIGN_STRETCH, 0, 1);
-    lv_obj_set_style_pad_all(pane, SZ(24, 16), 0);
+    lv_obj_set_style_pad_all(pane, 24, 0);
     for (int i = 0; i < TAB_N; i++) {
-        panels[i] = w_col(pane, SZ(16, 10));
+        panels[i] = w_col(pane, 16);
         lv_obj_set_size(panels[i], LV_PCT(100), LV_PCT(100));
     }
     build_wifi(panels[TAB_WIFI]);
@@ -667,8 +666,8 @@ void ui_settings_create(void)
     build_solar(panels[TAB_SOLAR]);
     build_time(panels[TAB_TIME]);
     build_display(panels[TAB_UNITS]);
-    un_seg = w_seg(panels[TAB_UNITS], UNIT_MAP, SZ(68, 52), SZ(F_18, F_16), on_unit, NULL);
-    lv_obj_set_width(un_seg, SZ(420, 360));
+    un_seg = w_seg(panels[TAB_UNITS], UNIT_MAP, 68, F_18, on_unit, NULL);
+    lv_obj_set_width(un_seg, 420);
     build_about(panels[TAB_ABOUT]);
 
     w_show(s_root, false);

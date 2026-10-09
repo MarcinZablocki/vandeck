@@ -21,11 +21,6 @@
 #define C_BLUE      0x72C2E6
 #define HEX(c) lv_color_hex(c)
 
-// Compact layout for small panels (800x480 class): chosen once from the display size in ui_init(), before any
-// page is built. SZ(full, compact) picks a size or font; at 1024x600 everything uses the full value.
-extern bool g_compact;
-#define SZ(full, compact) (g_compact ? (compact) : (full))
-
 LV_IMAGE_DECLARE(img_logo_640);          // VanDeck wordmark, alpha-only: tinted with w_tinted_image()
 LV_IMAGE_DECLARE(img_logo_160);
 lv_obj_t *w_tinted_image(lv_obj_t *p, const lv_image_dsc_t *img, uint32_t color);

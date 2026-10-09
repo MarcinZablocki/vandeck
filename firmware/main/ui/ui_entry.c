@@ -87,8 +87,8 @@ static void open(mode_t_ m, const char *title, const char *step, const char *hin
     w_btn_text(b_show, "Show");
     w_btn_text(b_ok, m == M_WIFI ? "Connect" : m == M_VPIN ? "Next" : m == M_TSKEY || m == M_LOC ? "Save" : "Pair");
     lv_keyboard_set_mode(kb, m == M_VKEY ? LV_KEYBOARD_MODE_USER_1 : m == M_LOC ? LV_KEYBOARD_MODE_USER_2 : LV_KEYBOARD_MODE_TEXT_LOWER);
-    lv_obj_set_width(kb, keypad ? SZ(760, LV_PCT(100)) : LV_PCT(100));
-    lv_obj_set_height(kb, keypad ? SZ(220, 200) : SZ(300, 250));
+    lv_obj_set_width(kb, keypad ? 760 : LV_PCT(100));
+    lv_obj_set_height(kb, keypad ? 220 : 300);
     update();
     w_show(s_root, true);
 }
@@ -176,13 +176,13 @@ void ui_entry_create(void)
     s_root = w_rect(lv_layer_top(), C_BG, 0);
     lv_obj_set_size(s_root, LV_PCT(100), LV_PCT(100));
     lv_obj_add_flag(s_root, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_style_pad_hor(s_root, SZ(16, 10), 0);
-    lv_obj_set_style_pad_bottom(s_root, SZ(16, 10), 0);
+    lv_obj_set_style_pad_hor(s_root, 16, 0);
+    lv_obj_set_style_pad_bottom(s_root, 16, 0);
     lv_obj_set_flex_flow(s_root, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(s_root, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
     lv_obj_t *h = w_row(s_root, 12);
-    lv_obj_set_size(h, LV_PCT(100), SZ(60, 52));
+    lv_obj_set_size(h, LV_PCT(100), 60);
     lv_obj_set_flex_align(h, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_t *cb = w_btn(h, "Cancel", F_16, 44, false, on_cancel, NULL);
     lv_obj_set_style_radius(cb, 22, 0);
@@ -193,12 +193,12 @@ void ui_entry_create(void)
     b_ok = w_btn(h, "Connect", F_16, 44, true, on_ok, NULL);
     lv_obj_set_style_radius(b_ok, 22, 0);
 
-    lv_obj_t *mid = w_col(s_root, SZ(14, 8));
+    lv_obj_t *mid = w_col(s_root, 14);
     lv_obj_set_width(mid, LV_PCT(100));
     lv_obj_set_flex_grow(mid, 1);
     lv_obj_set_flex_align(mid, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_t *field = w_rect(mid, C_CARD, 16);
-    lv_obj_set_size(field, SZ(720, 640), SZ(68, 56));
+    lv_obj_set_size(field, 720, 68);
     lv_obj_set_style_border_width(field, 2, 0);
     lv_obj_set_style_border_color(field, HEX(C_BTN2), 0);
     lv_obj_set_style_pad_left(field, 12, 0);
@@ -211,17 +211,17 @@ void ui_entry_create(void)
     lv_obj_set_flex_grow(ta, 1);
     lv_obj_set_style_bg_opa(ta, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(ta, 0, 0);
-    lv_obj_set_style_text_font(ta, SZ(F_24, F_22), 0);
+    lv_obj_set_style_text_font(ta, F_24, 0);
     lv_obj_set_style_text_color(ta, HEX(C_TXT), 0);
     lv_obj_set_style_text_color(ta, HEX(C_FAINT), LV_PART_TEXTAREA_PLACEHOLDER);
     lv_obj_set_style_bg_color(ta, HEX(C_TXT), LV_PART_CURSOR);
     lv_obj_add_state(ta, LV_STATE_FOCUSED);
     lv_obj_add_event_cb(ta, on_ta, LV_EVENT_ALL, NULL);
     l_count = w_label(field, F_14, C_MUTED, "");
-    b_show = w_btn(field, "Show", F_16, SZ(48, 40), false, on_show, NULL);
+    b_show = w_btn(field, "Show", F_16, 48, false, on_show, NULL);
     lv_obj_set_style_radius(b_show, 12, 0);
-    l_hint = w_label(mid, SZ(F_16, F_14), C_MUTED, "");
-    lv_obj_set_style_max_width(l_hint, SZ(720, 640), 0);
+    l_hint = w_label(mid, F_16, C_MUTED, "");
+    lv_obj_set_style_max_width(l_hint, 720, 0);
 
     kb = lv_keyboard_create(s_root);
     lv_keyboard_set_textarea(kb, ta);
@@ -233,12 +233,12 @@ void ui_entry_create(void)
     lv_obj_set_style_bg_opa(kb, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(kb, 0, 0);
     lv_obj_set_style_pad_all(kb, 0, 0);
-    lv_obj_set_style_pad_gap(kb, SZ(6, 4), 0);
+    lv_obj_set_style_pad_gap(kb, 6, 0);
     lv_obj_set_style_bg_color(kb, HEX(C_INSET), LV_PART_ITEMS);
     lv_obj_set_style_bg_color(kb, HEX(C_BTN), LV_PART_ITEMS | LV_STATE_CHECKED);
     lv_obj_set_style_bg_color(kb, HEX(C_BTN2), LV_PART_ITEMS | LV_STATE_PRESSED);
     lv_obj_set_style_text_color(kb, HEX(C_TXT), LV_PART_ITEMS);
-    lv_obj_set_style_text_font(kb, SZ(F_22, F_20), LV_PART_ITEMS);
+    lv_obj_set_style_text_font(kb, F_22, LV_PART_ITEMS);
     lv_obj_set_style_radius(kb, 12, LV_PART_ITEMS);
     lv_obj_set_style_border_width(kb, 0, LV_PART_ITEMS);
     lv_obj_set_style_shadow_width(kb, 0, LV_PART_ITEMS);

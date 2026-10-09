@@ -1,7 +1,8 @@
 # Display simulator
 
-Runs the real UI (`main/ui`, `main/app/sim.c` demo data) on the desktop at **800×480**: as a plain colour LCD
-(`--lcd`), or filtered the way a Waveshare 7.5" e-paper panel (V2, black/white with a 4-grey mode) would show it. Services are stubs
+Runs the real UI (`main/ui`, `main/app/sim.c` demo data) on the desktop at **1024×600**: as the panel's colour LCD
+(`--lcd`), or filtered the way an e-paper panel (black/white with a 4-grey mode) would show it. The UI is laid out for
+1024×600 only; `--size` shows what another panel would clip (e.g. `--size 800x480` for a Waveshare 7.5" V2). Services are stubs
 (`sim_services.c`) with canned heater, tank and weather data.
 
 ## Build
@@ -11,8 +12,8 @@ Needs SDL2 (`brew install sdl2`) and LVGL in `../managed_components` (run `idf.p
 ```bash
 cmake -S firmware/sim -B firmware/sim/build -DCMAKE_BUILD_TYPE=Release
 cmake --build firmware/sim/build -j
-firmware/sim/build/vandeck_sim --lcd --scale 2     # 800x480 LCD
-firmware/sim/build/vandeck_sim --scale 2           # 800x480 e-paper
+firmware/sim/build/vandeck_sim --lcd                        # the panel (1024x600)
+firmware/sim/build/vandeck_sim --size 800x480 --scale 2     # 800x480 e-paper
 ```
 
 ## Keys
@@ -31,8 +32,5 @@ firmware/sim/build/vandeck_sim --scale 2           # 800x480 e-paper
 The window title counts panel updates in the last minute. A real panel takes ~4 s for a full refresh
 (~0.4 s partial), so that number needs to be small.
 
-Options: `--lcd`, `--size WxH` (e.g. `1024x600` for the current panel), `--scale N`, `--mode 1..4`, `--invert`, `--no-refresh`, and `--shots DIR`, which renders every page
+Options: `--lcd`, `--warmup SEC` (run that long before `--shots`, e.g. 65 for the battery time estimate), `--size WxH` (default `1024x600`, the panel), `--scale N`, `--mode 1..4`, `--invert`, `--no-refresh`, and `--shots DIR`, which renders every page
 (in every mode, or colour only with `--lcd`), every Settings tab, both text-entry screens and a few Energy frames of the battery flow animation to `DIR`, then exits.
-
-The UI picks its compact layout (`g_compact` in `ui_widgets.h`) from the display size, so `--size 800x480` and
-`--size 1024x600` show what each panel gets from the same firmware.

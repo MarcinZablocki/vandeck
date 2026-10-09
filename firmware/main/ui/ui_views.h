@@ -4,6 +4,7 @@
 
 lv_obj_t *ui_energy_create(lv_obj_t *parent);
 void ui_energy_refresh(const vd_model_t *m);
+void ui_energy_track(const vd_model_t *m);       // every UI tick, any page: keeps the bank current average
 lv_obj_t *ui_solar_create(lv_obj_t *parent);
 void ui_solar_refresh(const vd_model_t *m);
 lv_obj_t *ui_tanks_create(lv_obj_t *parent);
