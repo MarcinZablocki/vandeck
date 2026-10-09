@@ -73,8 +73,18 @@ static void teardown(void)
     s_ml = NULL;
 }
 
+// microlink logs every packet at info level. Keep its warnings and errors; 'log <tag> info' on the console turns a
+// tag back up for debugging.
+static void quiet_microlink(void)
+{
+    static const char *const TAGS[] = { "microlink", "ml_at_sock", "ml_cell", "ml_config", "ml_coord", "ml_derp", "ml_h2",
+        "ml_net_io", "ml_net_sw", "ml_noise", "ml_peer_nvs", "ml_stun", "ml_tcp", "ml_udp", "ml_wg_mgr", "ml_zc", "nacl_box" };
+    for (size_t i = 0; i < sizeof TAGS / sizeof TAGS[0]; i++) esp_log_level_set(TAGS[i], ESP_LOG_WARN);
+}
+
 static bool start(const char *key)
 {
+    quiet_microlink();
     strlcpy(s_run_key, key, sizeof s_run_key);
     microlink_config_t c = {
         .auth_key = s_run_key,     // "" is fine once the node has registered

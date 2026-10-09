@@ -130,6 +130,11 @@ CONFIG_BT_NIMBLE_NVS_PERSIST=y
 CONFIG_LWIP_TCPIP_TASK_STACK_SIZE=6144
 CONFIG_LWIP_TCPIP_RECVMBOX_SIZE=64
 CONFIG_LWIP_IP4_REASSEMBLY=y
+# TLS buffers (16 KB in + 4 KB out per connection) in PSRAM: in internal RAM the GitHub update check alone
+# (two connections, for the redirect) took internal free down to ~17 KB and BLE commands failed to allocate.
+CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y
+# Lets big static tables marked EXT_RAM_BSS_ATTR (microlink's DISCO probes) live in PSRAM.
+CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
 CONFIG_MBEDTLS_CHACHA20_C=y
 CONFIG_MBEDTLS_POLY1305_C=y
 CONFIG_MBEDTLS_CHACHAPOLY_C=y

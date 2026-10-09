@@ -9,9 +9,18 @@ dependencies:
   espressif/esp_lcd_ek79007: "==2.0.2~1"
   espressif/esp_lcd_touch_gt911: "==1.2.1"
   # Same versions ESP32-Truma runs on this board; its C6 slave firmware is 2.12.x (host and slave must match major.minor).
-  espressif/esp_hosted: "==2.12.8"
+  # Patched copy of 2.12.8: hosted_malloc_align falls back to PSRAM when internal DMA RAM can't fit a request
+  # (see the VanDeck patch in host/port/esp/freertos/src/port_esp_hosted_host_os.c). Docs, examples and the
+  # slave firmware sources are left out. Drop once upstream falls back on its own.
+  espressif/esp_hosted:
+    version: "==2.12.8"
+    override_path: "../components/esp_hosted"
   espressif/esp_wifi_remote: "==1.6.0"
   espressif/mdns: "^1.8"                    # vandeck.local for OTA uploads
   valdanylchuk/breezybox: "^1.1.1"          # BusyBox-style shell on the USB serial port (needs the littlefs partition)
   # Tailscale node on the panel (ts2021 control plane + WireGuard); see net/tailnet_svc.c. Needs IDF 6.x.
-  fugo101/microlink: "==3.2.0"
+  # Patched copy of 3.2.0: DISCO probe table 128 slots in PSRAM, oldest evicted when full (see the VanDeck patch
+  # in src/ml_wg_mgr.c). With 32 it saturated on a ~15-peer tailnet and no direct path ever came up.
+  fugo101/microlink:
+    version: "==3.2.0"
+    override_path: "../components/microlink"
