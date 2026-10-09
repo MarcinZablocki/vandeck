@@ -10,6 +10,7 @@ static lv_obj_t *l_pv, *l_pvcap, *st_bar[3], *st_lbl[3], *l_serr, *l_sbv, *l_sba
 static lv_obj_t *l_tot, *l_tot_ah, *flow_dot, *l_flow, *l_flow_w;
 static struct { lv_obj_t *fill, *soc, *amps, *ah, *err; } B[2];
 static lv_obj_t *l_roomnow, *sp_dim[4];   // setpoint controls dim with the heating switch; the room reading doesn't
+#define HEAD_H 56   // every card header is this tall (the heater switch), so titles line up across the row
 static lv_obj_t *l_hsub, *sw_heat, *ctrls, *b_minus, *b_plus, *l_sp, *l_unit, *seg_water, *seg_fan;
 static bool s_unit_f = false;
 
@@ -66,9 +67,9 @@ static void solar_card(lv_obj_t *v)
 {
     lv_obj_t *c = w_card(v);
     lv_obj_set_grid_cell(c, LV_GRID_ALIGN_STRETCH, 0, 1, LV_GRID_ALIGN_STRETCH, 0, 1);
-    w_header(c, "Solar", "SmartSolar 100/30", NULL);
+    lv_obj_set_height(w_header(c, "Solar", "SmartSolar 100/30", NULL), HEAD_H);
     lv_obj_t *r = w_row(c, 8);
-    lv_obj_set_style_pad_top(r, 24, 0);
+    lv_obj_set_style_pad_top(r, 20, 0);
     lv_obj_set_flex_align(r, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_END);
     l_pv = w_label(r, F_NUM92, C_AMBER, "--");
     w_label(r, F_30, C_TXT2, "W");
@@ -111,15 +112,13 @@ static void battery_card(lv_obj_t *v)
 {
     lv_obj_t *c = w_card(v);
     lv_obj_set_grid_cell(c, LV_GRID_ALIGN_STRETCH, 1, 1, LV_GRID_ALIGN_STRETCH, 0, 1);
-    lv_obj_set_style_pad_row(c, 16, 0);
-    lv_obj_t *h = w_header(c, "Batteries", "LiTime 2x160Ah", NULL);
-    lv_obj_t *rc = w_col(h, 2);
-    lv_obj_set_flex_align(rc, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_END);
-    lv_obj_t *rr = w_row(rc, 2);
+    lv_obj_set_style_pad_row(c, 20, 0);
+    lv_obj_t *h = w_header(c, "Batteries", "", &l_tot_ah);   // subtitle: charge left / capacity
+    lv_obj_set_height(h, HEAD_H);
+    lv_obj_t *rr = w_row(h, 2);
     lv_obj_set_flex_align(rr, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_END);
     l_tot = w_label(rr, F_30, C_TXT, "--");
     w_label(rr, F_16, C_MUTED, "%");
-    l_tot_ah = w_label(rc, F_14, C_MUTED, "");
 
     lv_obj_t *fl = w_rect(c, C_INSET, 16);
     lv_obj_set_size(fl, LV_PCT(100), 52);
@@ -171,7 +170,8 @@ static void heater_card(lv_obj_t *v)
     lv_obj_t *c = w_card(v);
     lv_obj_set_grid_cell(c, LV_GRID_ALIGN_STRETCH, 2, 1, LV_GRID_ALIGN_STRETCH, 0, 1);
     lv_obj_set_style_pad_row(c, 20, 0);
-    lv_obj_t *h = w_header(c, "Heater", "Truma Combi", &l_hsub);
+    lv_obj_t *h = w_header(c, "Heater", "", &l_hsub);   // subtitle: what the Truma is doing
+    lv_obj_set_height(h, HEAD_H);
     lv_obj_set_flex_grow(lv_obj_get_parent(l_hsub), 1);   // the status line shortens with "..." before the switch
     lv_obj_set_size(l_hsub, LV_PCT(100), lv_font_get_line_height(F_14));
     lv_label_set_long_mode(l_hsub, LV_LABEL_LONG_DOT);
@@ -273,7 +273,7 @@ void ui_energy_refresh(const vd_model_t *m)
         w_fmt(l_tot, "%d", (int)lroundf(avg));
         w_color(l_tot, avg < 20 ? C_RED : C_TXT);
         w_fmt(l_tot_ah, "%d / %d Ah", (int)lroundf(ah), (int)lroundf(full));
-    } else { lv_label_set_text(l_tot, "--"); lv_label_set_text(l_tot_ah, ""); }
+    } else { lv_label_set_text(l_tot, "--"); lv_label_set_text(l_tot_ah, "No battery data"); }
     int mode = !nv || fabsf(net) < 10 ? 0 : net > 0 ? 1 : 2;
     uint32_t fc = mode == 1 ? C_GREEN : mode == 2 ? C_ORANGE : C_MUTED;
     w_bg(flow_dot, fc); w_color(l_flow, fc);
@@ -288,7 +288,7 @@ void ui_energy_refresh(const vd_model_t *m)
 #endif
                    : !on ? (g_cfg.water == WATER_OFF ? "Off" : "Water only")
                    : g_cfg.water == WATER_OFF ? "Heating" : "Heating + water";
-    w_fmt(l_hsub, "Truma Combi - %s", st);
+    lv_label_set_text(l_hsub, st);
     for (int i = 0; i < 4; i++) lv_obj_set_style_opa(sp_dim[i], on ? LV_OPA_COVER : LV_OPA_40, 0);
     w_enable(b_minus, on); w_enable(b_plus, on); w_enable(seg_water, true); w_enable(seg_fan, true);
     char b[12]; ui_fmt_temp(b, sizeof b, g_cfg.setpoint_c);
