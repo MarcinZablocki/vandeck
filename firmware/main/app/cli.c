@@ -5,6 +5,8 @@
 #include "ble/ble_svc.h"
 #include "net/tailnet_svc.h"
 #include "net/weather.h"
+#include "net/update_svc.h"
+#include "esp_app_desc.h"
 #include "esp_console.h"
 #include "esp_netif.h"
 #include "esp_wifi.h"
@@ -146,6 +148,20 @@ static void print_weather(const vd_model_t *m)
     }
 }
 
+static void print_update(const vd_model_t *m)
+{
+    static const char *MODE[] = { "off", "notify", "automatic" };
+    static const char *ST[] = { "not checked yet", "checking", "up to date", "update available", "installing", "failed" };
+    const vd_update_t *u = &m->upd;
+    if (!update_svc_enabled()) { printf("updates: no repository configured (VanDeck > GitHub repository for updates)\n"); return; }
+    printf("updates (%s, %s): running %s, %s", CONFIG_VD_UPDATE_REPO, MODE[g_cfg.upd_mode % 3],
+           esp_app_get_description()->version, ST[u->state]);
+    if (u->latest[0]) printf(", latest release %s", u->latest);
+    if (u->checked) printf(", checked %llds ago", (long long)(time(NULL) - u->checked));
+    if (u->state == UPD_FAILED && u->msg[0]) printf(": %s", u->msg);
+    printf("\n");
+}
+
 typedef void (*printer_t)(const vd_model_t *);
 
 static int run(printer_t p)
@@ -170,6 +186,19 @@ static int c_heater(int c, char **v) { return run(print_heater); }
 static int c_tanks(int c, char **v) { return run(print_tanks); }
 static int c_starlink(int c, char **v) { return run(print_starlink); }
 static int c_wifi(int c, char **v) { return run(print_wifi); }
+static int c_update(int argc, char **argv)
+{
+    static const char *MODE[] = { "off", "notify", "auto" };
+    if (argc > 1) {
+        int i = 0;
+        while (i < 3 && strcmp(argv[1], MODE[i])) i++;
+        if (i < 3) { model_lock(); g_cfg.upd_mode = i; model_commit(); settings_save_later(); }
+        else if (!strcmp(argv[1], "check")) { update_svc_check(); printf("checking (see 'update' in a few seconds)\n"); }
+        else if (!strcmp(argv[1], "install")) { update_svc_install(); printf("installing if a newer release was found; the panel restarts when done\n"); }
+        else { printf("usage: update [check|install|off|notify|auto]\n"); return 1; }
+    }
+    return run(print_update);
+}
 static int c_weather(int argc, char **argv)
 {
     if (argc > 1) {
@@ -260,6 +289,7 @@ static const esp_console_cmd_t CMDS[] = {
     { .command = "heater",   .help = "Truma heater: LIN link, settings, room temperature", .func = c_heater },
     { .command = "tanks",    .help = "Tank levels (LPG, grey water)", .func = c_tanks },
     { .command = "starlink", .help = "Starlink power and dish statistics", .func = c_starlink },
+    { .command = "update",   .help = "Firmware updates from GitHub releases: show state; check, install, or set off|notify|auto", .hint = "[check|install|off|notify|auto]", .func = c_update },
     { .command = "weather",  .help = "Forecast and its location; 'loc <lat> <lon>' sets one by hand, 'refresh' fetches now", .hint = "[refresh|loc <lat> <lon>]", .func = c_weather },
     { .command = "net",      .help = "Wi-Fi connection the panel is using (BreezyBox 'wifi' manages networks)", .func = c_wifi },
     { .command = "tailnet",  .help = "Tailscale link: show state; on|off, 'key <tskey-...>' to register, 'forget' to leave the tailnet", .hint = "[on|off|key <k>|forget]", .func = c_tailnet },

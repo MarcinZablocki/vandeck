@@ -1301,6 +1301,8 @@ CONFIG_PARTITION_TABLE_MD5=y
 # default:
 CONFIG_VD_OTA_KEY="vandeck"
 # default:
+CONFIG_VD_UPDATE_REPO="MarcinZablocki/vandeck"
+# default:
 CONFIG_VD_TAILNET_HOSTNAME="vandeck"
 # default:
 CONFIG_VD_BATT_CAPACITY_AH=160

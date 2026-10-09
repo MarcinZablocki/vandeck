@@ -14,6 +14,7 @@
 #include "net/time_svc.h"
 #include "ble/ble_svc.h"
 #include "net/weather.h"
+#include "net/update_svc.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -453,12 +454,21 @@ static void refresh_display(void)
 
 // --- About
 static lv_obj_t *ab_ver, *ab_built, *ab_slot, *ab_upd, *ab_ip, *ab_up;
+static lv_obj_t *up_seg, *up_st, *up_hint, *up_check, *up_inst;
+static const char *UPD_MAP[] = { "Off", "Notify", "Automatic", "" };
+
+static void on_upd_mode(lv_event_t *e) { int i = w_seg_get(e); model_lock(); g_cfg.upd_mode = i; cfg_done(); }
+static void on_upd_check(lv_event_t *e) { update_svc_check(); }
+static void on_upd_install(lv_event_t *e) { update_svc_install(); }
 
 static void build_about(lv_obj_t *p)
 {
     w_tinted_image(p, &img_logo_160, C_TXT2);
-    lv_obj_t *kv = w_col(p, 14);
-    lv_obj_set_width(kv, 520);
+    lv_obj_t *cols = w_row(p, 24);
+    lv_obj_set_width(cols, LV_PCT(100));
+    lv_obj_set_flex_align(cols, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+    lv_obj_t *kv = w_col(cols, 14);
+    lv_obj_set_width(kv, 372);
     lv_obj_set_style_pad_top(kv, 8, 0);
     ab_ver = w_kv(kv, "Firmware version", "");
     ab_built = w_kv(kv, "Built", "");
@@ -466,7 +476,25 @@ static void build_about(lv_obj_t *p)
     ab_slot = w_kv(kv, "Running from", "");
     ab_ip = w_kv(kv, "IP address", "");
     ab_up = w_kv(kv, "Uptime", "");
-    w_label(p, F_14, C_MUTED, "Update over Wi-Fi: tools/ota.sh  -  console: tools/console.sh (vandeck.local:23)");
+
+    // Updates from GitHub releases
+    lv_obj_t *u = w_col(cols, 12);
+    lv_obj_set_flex_grow(u, 1);
+    w_header(u, "Updates", update_svc_enabled() ? "From GitHub releases" : "No repository set (menuconfig)", NULL);
+    up_seg = w_seg(u, UPD_MAP, 56, F_16, on_upd_mode, NULL);
+    up_st = w_label(u, F_16, C_TXT2, "");
+    up_hint = w_label(u, F_14, C_MUTED, "");
+    for (lv_obj_t **l = (lv_obj_t *[]){ up_st, up_hint, NULL }; *l; l++) {
+        lv_obj_set_width(*l, LV_PCT(100));
+        lv_label_set_long_mode(*l, LV_LABEL_LONG_WRAP);
+    }
+    lv_obj_t *br = w_row(u, 10);
+    up_check = w_btn(br, "Check now", F_16, 48, false, on_upd_check, NULL);
+    up_inst = w_btn(br, "Install", F_16, 48, true, on_upd_install, NULL);
+    if (!update_svc_enabled()) { w_enable(up_seg, false); w_show(br, false); }
+
+    lv_obj_t *fn = w_label(p, F_14, C_MUTED, "Update over Wi-Fi: tools/ota.sh  -  console: tools/console.sh (vandeck.local:23)");
+    lv_obj_set_style_pad_top(fn, 8, 0);
     for (lv_obj_t **l = (lv_obj_t *[]){ ab_ver, ab_built, ab_upd, ab_slot, ab_ip, ab_up, NULL }; *l; l++)
         lv_obj_set_style_text_font(*l, F_18, 0);
 }
@@ -477,8 +505,40 @@ static void fmt_when(char *b, size_t n, time_t t)
     strftime(b, n, g_cfg.h12 ? "%d %b %Y, %I:%M %p" : "%d %b %Y, %H:%M", &tm);
 }
 
-static void refresh_about(void)
+static void refresh_updates(const vd_model_t *m)
 {
+    const vd_update_t *u = &m->upd;
+    w_seg_set(up_seg, g_cfg.upd_mode);
+    char ago[32] = "";
+    if (u->checked) {
+        int64_t s = time(NULL) - u->checked;
+        if (s < 120) snprintf(ago, sizeof ago, " (checked just now)");
+        else if (s < 7200) snprintf(ago, sizeof ago, " (checked %d min ago)", (int)(s / 60));
+        else snprintf(ago, sizeof ago, " (checked %d h ago)", (int)(s / 3600));
+    }
+    uint32_t c = C_TXT2;
+    if (!update_svc_enabled()) lv_label_set_text(up_st, "Set VanDeck > GitHub repository for updates");
+    else switch (u->state) {
+    case UPD_CHECKING: lv_label_set_text(up_st, "Checking..."); break;
+    case UPD_CURRENT: w_fmt(up_st, "Up to date%s", ago); c = C_GREEN; break;
+    case UPD_AVAILABLE: w_fmt(up_st, "Version %s is available", u->latest); c = C_AMBER; break;
+    case UPD_INSTALLING: w_fmt(up_st, "Installing %s - %u %%", u->latest, u->pct); c = C_AMBER; break;
+    case UPD_FAILED: w_fmt(up_st, "%s", u->msg[0] ? u->msg : "Update check failed"); c = C_ORANGE; break;
+    default: lv_label_set_text(up_st, g_cfg.upd_mode == UPD_MODE_OFF ? "Not checking" : "First check a few minutes after start"); break;
+    }
+    w_color(up_st, c);
+    lv_label_set_text(up_hint, g_cfg.upd_mode == UPD_MODE_AUTO ? "Installs by itself at night (2 to 5 am) once the panel has been idle for 15 minutes"
+                             : g_cfg.upd_mode == UPD_MODE_NOTIFY ? "Checks twice a day and shows a dot on Settings when there's an update"
+                             : "No update checks. Check now still works");
+    bool avail = u->state == UPD_AVAILABLE;
+    w_show(up_inst, avail);
+    if (avail) w_btn_text(up_inst, "Install");
+    w_btn_state(up_check, false, u->state != UPD_CHECKING && u->state != UPD_INSTALLING);
+}
+
+static void refresh_about(const vd_model_t *m)
+{
+    refresh_updates(m);
     const esp_app_desc_t *d = esp_app_get_description();
     lv_label_set_text(ab_ver, d->version);
     w_fmt(ab_built, "%s %.5s", d->date, d->time);
@@ -624,7 +684,8 @@ void ui_settings_refresh(const vd_model_t *m)
     lv_label_set_text(tab_meta[TAB_TIME], g_cfg.h12 ? "12h" : "24h");
     static const char *TO_SHORT[] = { "30 s", "1 min", "5 min", "never" };
     w_fmt(tab_meta[TAB_UNITS], "%s, %s", ui_temp_unit(), TO_SHORT[g_cfg.screen_timeout & 3]);
-    lv_label_set_text(tab_meta[TAB_ABOUT], esp_app_get_description()->version);
+    if (m->upd.state == UPD_AVAILABLE && g_cfg.upd_mode != UPD_MODE_OFF) w_fmt(tab_meta[TAB_ABOUT], "%s new", m->upd.latest);
+    else lv_label_set_text(tab_meta[TAB_ABOUT], esp_app_get_description()->version);
     switch (s_tab) {
     case TAB_WIFI: refresh_wifi(m); break;
     case TAB_TAILNET: refresh_tailnet(m); break;
@@ -636,7 +697,7 @@ void ui_settings_refresh(const vd_model_t *m)
     }
     case TAB_SOLAR: refresh_solar(); break;
     case TAB_TIME: refresh_time(m); break;
-    case TAB_ABOUT: refresh_about(); break;
+    case TAB_ABOUT: refresh_about(m); break;
     default: refresh_display(); break;
     }
 }

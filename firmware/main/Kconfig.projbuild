@@ -16,6 +16,13 @@ config VD_OTA_KEY
     help
         Sent by tools/ota.sh in the X-OTA-Key header; uploads without it are refused. Change it from the default.
 
+config VD_UPDATE_REPO
+    string "GitHub repository for updates (owner/name)"
+    default "MarcinZablocki/vandeck"
+    help
+        The panel checks this repository's latest release for version.json and vandeck.bin (see tools/release.sh)
+        and offers or installs newer firmware (Settings > About). Empty: no update checks.
+
 config VD_TAILNET_HOSTNAME
     string "Tailnet device name"
     default "vandeck"

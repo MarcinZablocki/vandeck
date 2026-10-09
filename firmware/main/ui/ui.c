@@ -17,7 +17,7 @@ static time_t s_sec;
 static int s_view;
 static lv_obj_t *s_views[V_COUNT];
 static struct { lv_obj_t *box, *icon, *lbl; } s_nav[V_COUNT];
-static lv_obj_t *l_time, *l_ampm, *l_date, *l_demo, *d_wifi, *d_ble, *l_ble;
+static lv_obj_t *l_time, *l_ampm, *l_date, *l_demo, *d_wifi, *d_ble, *l_ble, *d_upd;
 
 const vd_model_t *ui_model(void) { return &s_m; }
 void ui_request_refresh(void) { s_ver = UINT32_MAX; }
@@ -85,6 +85,7 @@ static void refresh_rail(const vd_model_t *m)
     for (int r = 0; r < ROLE_COUNT; r++) if (m->dev_state[r] == DEV_ON) on++;
     w_fmt(l_ble, "BLE %d/%d", on, ROLE_COUNT);
     w_bg(d_ble, on == ROLE_COUNT ? C_GREEN : on ? C_AMBER : C_FAINT);
+    w_show(d_upd, m->upd.state == UPD_AVAILABLE && g_cfg.upd_mode != UPD_MODE_OFF);
     refresh_wx_nav(m);
 }
 
@@ -215,7 +216,10 @@ static void rail_create(lv_obj_t *scr)
     lv_obj_t *st = w_col(rail, 4);
     status_item(st, "Wi-Fi", &d_wifi, NULL);
     status_item(st, "BLE 0/4", &d_ble, &l_ble);
-    rail_item(rail, IC_SETTINGS, "Settings", NULL, NULL, on_settings, NULL);
+    lv_obj_t *sb = rail_item(rail, IC_SETTINGS, "Settings", NULL, NULL, on_settings, NULL);
+    d_upd = w_dot(sb, 10, C_AMBER);                  // a firmware update is waiting
+    lv_obj_add_flag(d_upd, LV_OBJ_FLAG_FLOATING);
+    lv_obj_align(d_upd, LV_ALIGN_TOP_RIGHT, -22, 8);
 }
 
 void ui_init(void)
@@ -295,18 +299,26 @@ static void wake(void)
 
 static void on_blank_touch(lv_event_t *e) { wake(); }
 
-static void saver_tick(lv_timer_t *t)
+void ui_screen_sleep(void)
 {
-    int to = settings_screen_timeout_ms();
-    bool busy = M.ota.state != OTA_IDLE;   // keep update progress visible
-    if (s_blank) { if (!to || busy) wake(); return; }
-    if (!to || busy || lv_display_get_inactive_time(NULL) < (uint32_t)to) return;
+    if (s_blank) return;
     s_blank = lv_obj_create(lv_layer_sys());
     lv_obj_remove_style_all(s_blank);
     lv_obj_set_size(s_blank, LV_PCT(100), LV_PCT(100));
     lv_obj_add_flag(s_blank, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(s_blank, on_blank_touch, LV_EVENT_PRESSED, NULL);
     board_set_backlight(0);
+}
+
+uint32_t ui_idle_ms(void) { return lv_display_get_inactive_time(NULL); }
+
+static void saver_tick(lv_timer_t *t)
+{
+    int to = settings_screen_timeout_ms();
+    bool busy = M.ota.state != OTA_IDLE;   // keep update progress visible
+    if (s_blank) { if (!to || busy) wake(); return; }
+    if (!to || busy || lv_display_get_inactive_time(NULL) < (uint32_t)to) return;
+    ui_screen_sleep();
     ESP_LOGI("screen", "off after %d s idle", to / 1000);
 }
 

@@ -12,6 +12,7 @@
 #include "net/time_svc.h"
 #include "net/starlink.h"
 #include "net/weather.h"
+#include "net/update_svc.h"
 #include "net/ota_svc.h"
 #include "net/tailnet_svc.h"
 #include "net/log_svc.h"
@@ -34,14 +35,17 @@ static void startup(void *arg)
     time_svc_init();
     solar_log_init();
 
+    // After an automatic night-time update the panel restarts with the screen dark, as it was.
+    bool quiet = ota_svc_take_quiet_boot();
     board_init();
     lvgl_port_lock(0);
     ui_splash_show();
     lvgl_port_unlock();
     vTaskDelay(pdMS_TO_TICKS(60));   // let the splash reach the panel before the backlight comes on
-    board_set_backlight(g_cfg.brightness);
+    if (!quiet) board_set_backlight(g_cfg.brightness);
     lvgl_port_lock(0);
     ui_init();
+    if (quiet) ui_screen_sleep();
     lvgl_port_unlock();
 
     wifi_svc_init();
@@ -54,6 +58,7 @@ static void startup(void *arg)
     tanks_init();
     starlink_init();
     weather_init();
+    update_svc_init();
 #if CONFIG_VD_SIMULATE
     sim_start();
 #endif

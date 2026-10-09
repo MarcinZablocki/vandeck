@@ -54,6 +54,41 @@ static void reboot_task(void *a)
     esp_restart();
 }
 
+bool ota_svc_claim(void) { return !__atomic_exchange_n(&s_busy, true, __ATOMIC_ACQ_REL); }
+void ota_svc_release(void) { s_busy = false; }
+void ota_svc_set_state(vd_ota_state_t st, int pct, const char *msg) { set_state(st, pct, msg); }
+
+esp_err_t ota_svc_commit(const esp_partition_t *dst, bool quiet)
+{
+    if (esp_ota_set_boot_partition(dst) != ESP_OK) return ESP_FAIL;
+    esp_app_desc_t nd;
+    nvs_handle_t nv;
+    if (nvs_open(NS, NVS_READWRITE, &nv) == ESP_OK) {
+        if (esp_ota_get_partition_description(dst, &nd) == ESP_OK) {
+            time_t now = time(NULL);
+            nvs_set_blob(nv, "pend_sha", nd.app_elf_sha256, sizeof nd.app_elf_sha256);
+            nvs_set_i64(nv, "pend_at", clock_set(now) ? now : 0);
+        }
+        if (quiet) nvs_set_u8(nv, "quiet", 1);
+        nvs_commit(nv);
+        nvs_close(nv);
+    }
+    ESP_LOGI(TAG, "update written to %s, restarting", dst->label);
+    if (!quiet) set_state(OTA_DONE, 100, "Restarting");
+    xTaskCreate(reboot_task, "ota_reboot", 2048, NULL, 5, NULL);
+    return ESP_OK;
+}
+
+bool ota_svc_take_quiet_boot(void)
+{
+    nvs_handle_t nv;
+    uint8_t q = 0;
+    if (nvs_open(NS, NVS_READWRITE, &nv) != ESP_OK) return false;
+    if (nvs_get_u8(nv, "quiet", &q) == ESP_OK) { nvs_erase_key(nv, "quiet"); nvs_commit(nv); }
+    nvs_close(nv);
+    return q;
+}
+
 bool ota_svc_check_key(httpd_req_t *r)
 {
     char key[64] = { 0 };
@@ -66,8 +101,7 @@ static esp_err_t on_ota(httpd_req_t *r)
         httpd_resp_set_status(r, "403 Forbidden");
         return httpd_resp_sendstr(r, "bad or missing X-OTA-Key\n");
     }
-    if (s_busy) { httpd_resp_set_status(r, "409 Conflict"); return httpd_resp_sendstr(r, "update already running\n"); }
-    s_busy = true;
+    if (!ota_svc_claim()) { httpd_resp_set_status(r, "409 Conflict"); return httpd_resp_sendstr(r, "update already running\n"); }
 
     const esp_partition_t *dst = esp_ota_get_next_update_partition(NULL);
     size_t total = r->content_len;
@@ -121,23 +155,8 @@ static esp_err_t on_ota(httpd_req_t *r)
         httpd_resp_set_status(r, "400 Bad Request");
         return httpd_resp_sendstr(r, "image failed verification\n");
     }
-    if (esp_ota_set_boot_partition(dst) != ESP_OK) return fail(r, 0, "500 Internal Server Error", "can't select new image\n");
-
-    esp_app_desc_t nd;
-    nvs_handle_t nv;
-    if (esp_ota_get_partition_description(dst, &nd) == ESP_OK && nvs_open(NS, NVS_READWRITE, &nv) == ESP_OK) {
-        time_t now = time(NULL);
-        nvs_set_blob(nv, "pend_sha", nd.app_elf_sha256, sizeof nd.app_elf_sha256);
-        nvs_set_i64(nv, "pend_at", clock_set(now) ? now : 0);
-        nvs_commit(nv);
-        nvs_close(nv);
-    }
-
-    ESP_LOGI(TAG, "update written to %s, restarting", dst->label);
-    set_state(OTA_DONE, 100, "Restarting");
-    httpd_resp_sendstr(r, "OK, restarting\n");
-    xTaskCreate(reboot_task, "ota_reboot", 2048, NULL, 5, NULL);
-    return ESP_OK;
+    if (ota_svc_commit(dst, false) != ESP_OK) return fail(r, 0, "500 Internal Server Error", "can't select new image\n");
+    return httpd_resp_sendstr(r, "OK, restarting\n");
 }
 
 static esp_err_t on_version(httpd_req_t *r)

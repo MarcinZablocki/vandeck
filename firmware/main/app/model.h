@@ -48,6 +48,9 @@ typedef struct { bool connected, scanning, failed; char joining[33]; vd_net_t ne
 typedef struct { char name[24]; uint8_t addr[6]; uint8_t addr_type; int8_t rssi; } vd_cand_t;
 typedef enum { OTA_IDLE, OTA_RECEIVING, OTA_DONE, OTA_FAILED } vd_ota_state_t;
 typedef struct { vd_ota_state_t state; uint8_t pct; char version[32]; char msg[48]; } vd_ota_t;
+// Firmware updates from GitHub releases. checked = unix time of the last successful check (0 = never).
+typedef enum { UPD_IDLE, UPD_CHECKING, UPD_CURRENT, UPD_AVAILABLE, UPD_INSTALLING, UPD_FAILED } vd_upd_state_t;
+typedef struct { vd_upd_state_t state; char latest[32]; int64_t checked; uint8_t pct; char msg[48]; } vd_update_t;
 typedef struct { bool active, scanning; uint8_t role; vd_cand_t c[PAIR_MAX_CANDS]; uint8_t n; } vd_pair_t;
 // Tailnet (Tailscale) link. ip is the panel's 100.x address in host byte order, 0 until registered.
 typedef enum { TN_OFF, TN_NEED_KEY, TN_WAIT_WIFI, TN_CONNECTING, TN_CONNECTED, TN_AUTH_FAILED, TN_ERROR } vd_tn_state_t;
@@ -64,6 +67,7 @@ typedef struct {
     uint8_t dev_state[ROLE_COUNT];
     vd_pair_t pair;
     vd_ota_t ota;
+    vd_update_t upd;
     vd_tailnet_t tn;
     bool time_synced;
     bool demo;
