@@ -48,11 +48,32 @@ You get the last 32 KB of log output, then live output: the same text UART0 prin
 The first line sent must be the OTA key, which the script sends for you. Commands: `help`, `version`,
 `heap`, `log <tag|*> <level>` (e.g. `log lin debug`), `reboot`, `quit`. One client at a time on TCP port 23.
 
-## Tailnet (Tailscale)
+## Remote access
 
-The panel can be a node on your tailnet, so the update, console and status endpoints work from anywhere without a router
+**Recommended: a subnet router next to the panel.** A small Linux box on the van LAN (a Raspberry Pi Zero W or Zero 2 W on
+12 V through a USB buck works) running Tailscale with `--advertise-routes=192.168.1.0/24` makes the panel reachable
+from the tailnet at its LAN address, with nothing running on the panel:
+
+```bash
+tools/ota.sh 192.168.1.77
+tools/console.sh 192.168.1.77
+curl http://192.168.1.77/version
+```
+
+Approve the route in the admin console and limit it with an ACL to your own devices. The client needs
+`--accept-routes` on Linux. macOS and phones accept routes by default. A client whose own LAN is also 192.168.1.0/24
+reaches its local network instead, so give the van LAN a less common subnet if that happens.
+
+### On-panel tailnet (Tailscale)
+
+The panel can also be a tailnet node itself, for when there is no subnet router. **It is expensive:** on 0.5.16, with it
+connected, internal RAM free drops to about 26 KB (minimum about 6 KB), even with the esp_hosted SDIO buffers, mbedtls
+and microlink's tables moved to PSRAM. That leaves little margin for Wi-Fi, BLE and LIN bursts, so treat it as a fallback.
+The patched copies of microlink and esp_hosted in `components/` stay so it keeps working.
+
+With it on, the update, console and status endpoints work from anywhere without a router
 or port forwarding. It uses [microlink](https://components.espressif.com/components/fugo101/microlink) (Tailscale's
-control protocol + WireGuard, ESP-IDF 6 only). It is **off by default** and costs almost no RAM until you switch it on.
+control protocol + WireGuard, ESP-IDF 6 only). It is **off by default** and costs almost no RAM while off.
 
 1. In the Tailscale admin console, create an auth key (Settings > Keys): reusable, and ephemeral if you want a
    lost panel to drop off the tailnet. Then under Machines, disable key expiry for the panel once it appears.
