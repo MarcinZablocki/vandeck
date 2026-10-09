@@ -55,6 +55,8 @@ void settings_load(void)
             if (ver < 4) { g_cfg.pv_w = CONFIG_VD_PV_ARRAY_W; g_cfg.pv_eff = CONFIG_VD_PV_PERF_PCT; }
             if (g_cfg.pv_w < 20 || g_cfg.pv_w > 2000) g_cfg.pv_w = CONFIG_VD_PV_ARRAY_W;
             if (g_cfg.pv_eff < 30 || g_cfg.pv_eff > 100) g_cfg.pv_eff = CONFIG_VD_PV_PERF_PCT;
+            if (ver < 5) { g_cfg.wx_place[0] = g_cfg.wx_country[0] = 0; g_cfg.wx_place_lat = g_cfg.wx_place_lon = 0; }
+            g_cfg.wx_place[sizeof g_cfg.wx_place - 1] = g_cfg.wx_country[sizeof g_cfg.wx_country - 1] = 0;
             g_cfg.ver = VD_CFG_VER;
             ESP_LOGI("cfg", "loaded settings v%u", ver);
         }

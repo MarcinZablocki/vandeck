@@ -2,7 +2,8 @@
 #include "model.h"
 
 #define VD_CFG_MAGIC 0x56444B31
-#define VD_CFG_VER   4   // 2: screen_timeout, brightness; 3: weather location; 4: solar array (appended; older blobs still load)
+#define VD_CFG_VER   5   // 2: screen_timeout, brightness; 3: weather location; 4: solar array; 5: place name
+                         // (appended; older blobs still load)
 
 typedef struct {
     bool paired;
@@ -30,6 +31,9 @@ typedef struct {
     // v4
     uint16_t pv_w;             // solar array peak power, for the forecast's expected yield
     uint8_t pv_eff;            // % of that rating that reaches the battery
+    // v5: nearest place to the weather location (OpenStreetMap Nominatim), ASCII; "" = none found / not looked up
+    char wx_place[40], wx_country[32];
+    float wx_place_lat, wx_place_lon;   // where it was looked up for
 } vd_settings_t;
 
 enum { WX_SRC_NONE, WX_SRC_STARLINK, WX_SRC_MANUAL };

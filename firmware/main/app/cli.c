@@ -132,6 +132,8 @@ static void print_weather(const vd_model_t *m)
     const vd_weather_t *w = &m->wx;
     printf("weather: %s, location %s", ST[w->state], SRC[g_cfg.wx_src]);
     if (g_cfg.wx_src) printf(" %.4f, %.4f", g_cfg.wx_lat, g_cfg.wx_lon);
+    const char *place, *country;
+    if (weather_place(&place, &country)) printf(" near %s%s%s", place[0] ? place : "(no town)", country[0] ? ", " : "", country);
     if (m->sl.reachable) printf(" (dish %s)", m->sl.loc_ok ? "reports its position" : m->sl.loc_denied ? "won't share its position" : "position pending");
     printf("\n");
     if (!w->valid) return;

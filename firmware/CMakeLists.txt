@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
-set(PROJECT_VER "0.5.3")   # shown on the OTA screen and by GET /version; bump for every release
+set(PROJECT_VER "0.5.4")   # shown on the OTA screen and by GET /version; bump for every release
 project(vandeck)
 
 # BreezyBox's terminal (valdanylchuk/breezy_term) includes driver/usb_serial_jtag.h but only REQUIRES the legacy

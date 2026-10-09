@@ -9,7 +9,7 @@
 #include <stdio.h>
 #include <time.h>
 
-static lv_obj_t *box_now, *box_msg, *l_msg, *l_msg_sub, *i_now, *l_temp, *l_unit, *l_cond;
+static lv_obj_t *l_title, *box_now, *box_msg, *l_msg, *l_msg_sub, *i_now, *l_temp, *l_unit, *l_cond;
 static lv_obj_t *l_feels, *l_wind, *l_wind_u, *l_hum, *l_rise, *l_set, *l_upd, *l_src, *l_coord;
 static struct { lv_obj_t *col, *t, *ic, *temp, *pop; } H[WX_HOURS];
 static struct { lv_obj_t *col, *t, *ic, *hi, *lo, *pop; } D[WX_DAYS];
@@ -67,8 +67,12 @@ static void now_card(lv_obj_t *v)
 {
     lv_obj_t *c = w_card(v);
     lv_obj_set_grid_cell(c, LV_GRID_ALIGN_STRETCH, 0, 1, LV_GRID_ALIGN_STRETCH, 0, 2);
-    w_label(c, F_20, C_TXT, "Weather");
+    l_title = w_label(c, F_20, C_TXT, "Weather");             // the nearest town once it's known
+    lv_obj_set_size(l_title, LV_PCT(100), lv_font_get_line_height(F_20));
+    lv_label_set_long_mode(l_title, LV_LABEL_LONG_DOT);
     l_upd = w_label(c, F_14, C_MUTED, "");
+    lv_obj_set_size(l_upd, LV_PCT(100), lv_font_get_line_height(F_14));
+    lv_label_set_long_mode(l_upd, LV_LABEL_LONG_DOT);
 
     box_now = w_col(c, 10);
     lv_obj_set_width(box_now, LV_PCT(100));
@@ -187,14 +191,20 @@ void ui_weather_refresh(const vd_model_t *m)
         w_fmt(l_coord, "%.3f, %.3f", g_cfg.wx_lat, g_cfg.wx_lon);
     }
 
-    // Freshness line
+    // Title: the nearest town; under it the country and how fresh the forecast is
+    const char *place, *country;
+    bool hp = weather_place(&place, &country);
+    lv_label_set_text(l_title, hp && place[0] ? place : "Weather");
+    char fresh[48];
     fmt_age(age, sizeof age, now - w->fetched);
     uint32_t uc = C_MUTED;
-    if (!w->valid) lv_label_set_text(l_upd, "Open-Meteo");
-    else if (w->state == WX_FETCHING) lv_label_set_text(l_upd, "Updating...");
-    else if (w->state == WX_NO_NET) { w_fmt(l_upd, "Offline - updated %s", age); uc = C_ORANGE; }
-    else if (w->state == WX_ERROR) { w_fmt(l_upd, "Update failed - from %s", age); uc = C_ORANGE; }
-    else w_fmt(l_upd, "Updated %s", age);
+    if (!w->valid) snprintf(fresh, sizeof fresh, "Open-Meteo");
+    else if (w->state == WX_FETCHING) snprintf(fresh, sizeof fresh, "Updating...");
+    else if (w->state == WX_NO_NET) { snprintf(fresh, sizeof fresh, "Offline - updated %s", age); uc = C_ORANGE; }
+    else if (w->state == WX_ERROR) { snprintf(fresh, sizeof fresh, "Update failed - from %s", age); uc = C_ORANGE; }
+    else snprintf(fresh, sizeof fresh, "Updated %s", age);
+    if (hp && place[0] && country[0] && uc == C_MUTED) w_fmt(l_upd, "%s - %s", country, fresh);   // warnings win the space
+    else lv_label_set_text(l_upd, fresh);
     w_color(l_upd, uc);
 
     w_show(box_now, w->valid);

@@ -1,5 +1,7 @@
 // Weather forecast from Open-Meteo (free, no API key) for where the van is: the Starlink dish's GPS fix when it
 // reports one, otherwise the last fix or a location entered by hand. Both are kept in g_cfg.wx_* across reboots.
+// The nearest town comes from OpenStreetMap's Nominatim, looked up only after a move (its policy: an identifying
+// User-Agent and at most one request a second).
 #include "weather.h"
 #include "app/model.h"
 #include "app/settings.h"
@@ -7,6 +9,7 @@
 #include "esp_crt_bundle.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_app_desc.h"
 #include "cJSON.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -20,6 +23,10 @@ static const char *TAG = "weather";
 #define SAVE_MOVE_KM 1.0f      // store a new Starlink fix once the van has moved this far (spares the flash)
 #define REFETCH_KM   10.0f     // and fetch again straight away once it is this far from the forecast's location
 #define BUF_CAP      (16 * 1024)
+#define PLACE_KM       2.0f                      // look the town up again after moving this far
+#define PLACE_RETRY_US (10 * 60 * 1000000LL)
+#define PLACE_URL_FMT  "https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=13&accept-language=en" \
+                       "&lat=%.3f&lon=%.3f"
 #define URL_FMT "https://api.open-meteo.com/v1/forecast?latitude=%.4f&longitude=%.4f" \
     "&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,is_day,wind_speed_10m" \
     "&hourly=temperature_2m,weather_code,precipitation_probability,is_day" \
@@ -31,6 +38,8 @@ static const char *TAG = "weather";
 #define WX_DAYS_S STR(WX_DAYS)
 
 static volatile bool s_kick;
+static int64_t s_place_next;
+static char s_ua[72];
 
 static float dist_km(float la1, float lo1, float la2, float lo2)   // equirectangular: plenty at these distances
 {
@@ -74,9 +83,19 @@ bool weather_set_location(float lat, float lon)
 
 void weather_refresh(void) { s_kick = true; }
 
+bool weather_place(const char **name, const char **country)
+{
+    if (!g_cfg.wx_place[0] || g_cfg.wx_src == WX_SRC_NONE ||
+        dist_km(g_cfg.wx_place_lat, g_cfg.wx_place_lon, g_cfg.wx_lat, g_cfg.wx_lon) > 2 * PLACE_KM) return false;
+    *name = g_cfg.wx_place;
+    *country = g_cfg.wx_country;
+    return true;
+}
+
 static int http_get(const char *url, char *buf, int cap)
 {
-    esp_http_client_config_t c = { .url = url, .timeout_ms = 10000, .crt_bundle_attach = esp_crt_bundle_attach };
+    esp_http_client_config_t c = { .url = url, .timeout_ms = 10000, .crt_bundle_attach = esp_crt_bundle_attach,
+                                   .user_agent = s_ua };
     esp_http_client_handle_t h = esp_http_client_init(&c);
     int n = -1;
     if (h && esp_http_client_open(h, 0) == ESP_OK) {
@@ -145,6 +164,76 @@ static bool parse(const char *js, vd_weather_t *w)
     return ok;
 }
 
+// The panel's fonts are ASCII only: fold Latin accents ("Kraków" -> "Krakow"). False if anything else (another
+// script) had to be dropped, so the caller can try a different name.
+static bool ascii_fold(const char *s, char *o, size_t n)
+{
+    static const char L1[] = "AAAAAAACEEEEIIIIDNOOOOOxOUUUUYTsaaaaaaaceeeeiiiidnooooo/ouuuuyty";   // U+00C0..U+00FF
+    static const char LA[] = "AaAaAaCcCcCcCcDdDdEeEeEeEeEeGgGgGgGgHhHhIiIiIiIiIiIiJjKkkLlLlLlLlLlNnNnNnnNnOoOoOoOo"
+                             "RrRrRrSsSsSsSsTtTtTtUuUuUuUuUuUuWwYyYZzZzZzs";                      // U+0100..U+017F
+    const uint8_t *p = (const uint8_t *)s;
+    size_t k = 0;
+    bool all = true;
+    while (*p) {
+        uint32_t c = *p++;
+        if (c >= 0x80) {
+            int extra = c >= 0xF0 ? 3 : c >= 0xE0 ? 2 : c >= 0xC0 ? 1 : 0;
+            if (!extra) continue;                      // stray continuation byte
+            c &= 0x3F >> extra;
+            for (int i = 0; i < extra && (*p & 0xC0) == 0x80; i++) c = c << 6 | (*p++ & 0x3F);
+        }
+        char one[2] = { 0 };
+        const char *r = one;
+        if (c < 0x80) one[0] = (char)c;
+        else if (c == 0xC6) r = "AE"; else if (c == 0xE6) r = "ae"; else if (c == 0xDF) r = "ss";
+        else if (c == 0x152) r = "OE"; else if (c == 0x153) r = "oe";
+        else if (c >= 0xC0 && c < 0x100) one[0] = L1[c - 0xC0];
+        else if (c >= 0x100 && c < 0x180) one[0] = LA[c - 0x100];
+        else if (c == 0x2018 || c == 0x2019) one[0] = '\'';
+        else if (c == 0x2013 || c == 0x2014) one[0] = '-';
+        else all = false;
+        while (*r && k + 1 < n) o[k++] = *r++;
+    }
+    o[k] = 0;
+    return all;
+}
+
+// Town from a Nominatim reply: the most specific populated place it names. An "error" reply (open sea, nothing
+// near) is a valid answer with no town.
+static bool parse_place(const char *js, char *place, size_t pn, char *country, size_t cn)
+{
+    static const char *const KEYS[] = { "city", "town", "village", "hamlet", "municipality", "suburb", "county", "state" };
+    cJSON *root = cJSON_Parse(js);
+    if (!root) return false;
+    const cJSON *a = cJSON_GetObjectItem(root, "address");
+    bool ok = a || cJSON_GetObjectItem(root, "error");
+    place[0] = country[0] = 0;
+    for (size_t i = 0; a && i < sizeof KEYS / sizeof *KEYS && !place[0]; i++) {
+        const char *s = cJSON_GetStringValue(cJSON_GetObjectItem(a, KEYS[i]));
+        if (s && !ascii_fold(s, place, pn)) place[0] = 0;
+    }
+    const char *c = a ? cJSON_GetStringValue(cJSON_GetObjectItem(a, "country")) : NULL;
+    if (c && !ascii_fold(c, country, cn)) country[0] = 0;
+    cJSON_Delete(root);
+    return ok;
+}
+
+static void lookup_place(float lat, float lon, char *buf)
+{
+    char url[192], place[sizeof g_cfg.wx_place], country[sizeof g_cfg.wx_country];
+    snprintf(url, sizeof url, PLACE_URL_FMT, lat, lon);
+    bool ok = http_get(url, buf, BUF_CAP) > 0 && parse_place(buf, place, sizeof place, country, sizeof country);
+    s_place_next = now_us() + (ok ? 60 * 1000000LL : PLACE_RETRY_US);
+    if (!ok) { ESP_LOGW(TAG, "place lookup failed, retrying in 10 min"); return; }
+    model_lock();
+    strlcpy(g_cfg.wx_place, place, sizeof g_cfg.wx_place);
+    strlcpy(g_cfg.wx_country, country, sizeof g_cfg.wx_country);
+    g_cfg.wx_place_lat = lat; g_cfg.wx_place_lon = lon;
+    model_commit();
+    settings_save_later();
+    ESP_LOGI(TAG, "place: %s, %s", place[0] ? place : "(none nearby)", country);
+}
+
 static void set_state(vd_wx_state_t s)
 {
     model_lock();
@@ -171,11 +260,14 @@ static void task(void *arg)
         float lat = g_cfg.wx_lat, lon = g_cfg.wx_lon;
         bool valid = M.wx.valid, moved = valid && dist_km(M.wx.lat, M.wx.lon, lat, lon) > REFETCH_KM;
         vd_wx_state_t st = M.wx.state;
+        bool place_due = (!g_cfg.wx_place_lat && !g_cfg.wx_place_lon) ||
+                         dist_km(g_cfg.wx_place_lat, g_cfg.wx_place_lon, lat, lon) > PLACE_KM;
         model_unlock();
         if (save) settings_save_later();
 
         if (!have) { set_state(WX_NO_LOC); continue; }
         if (!net) { set_state(WX_NO_NET); continue; }
+        if (buf && valid && place_due && now_us() >= s_place_next) lookup_place(lat, lon, buf);   // forecast first
         if (!(s_kick || moved || now_us() >= next)) {
             if (st == WX_NO_LOC || st == WX_NO_NET) set_state(valid ? WX_OK : WX_ERROR);
             continue;
@@ -198,4 +290,8 @@ static void task(void *arg)
     }
 }
 
-void weather_init(void) { xTaskCreate(task, "weather", 10240, NULL, 3, NULL); }
+void weather_init(void)
+{
+    snprintf(s_ua, sizeof s_ua, "VanDeck/%s (ESP32 van panel)", esp_app_get_description()->version);
+    xTaskCreate(task, "weather", 10240, NULL, 3, NULL);
+}
