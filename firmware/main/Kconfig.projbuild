@@ -37,11 +37,11 @@ config VD_PV_ARRAY_W
 config VD_PV_PERF_PCT
     int "Solar system efficiency (%)"
     range 30 100
-    default 70
+    default 80
     help
         Starting value for Settings > Solar > System efficiency: the share of the panels' rated output that ends up
-        in the battery on flat roof mounting (heat, wiring, MPPT losses, the charger cutting back once the battery
-        is full). Tune it on the panel if the forecast is off.
+        in the battery on flat roof mounting. 80 % suits an MPPT charger (panel heat ~10 %, wiring and MPPT
+        conversion ~5 %, dirt and shade); a PWM charger is nearer 65-70 %. Tune it on the panel if the forecast is off.
 
 menu "Truma Combi (LIN)"
     choice VD_LIN_MODE
