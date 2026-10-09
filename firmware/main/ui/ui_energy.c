@@ -9,7 +9,7 @@
 static lv_obj_t *l_pv, *l_pvcap, *st_bar[3], *st_lbl[3], *l_serr, *l_sbv, *l_sba, *l_scp, *l_sload, *l_yield;
 static lv_obj_t *l_tot, *l_tot_ah, *flow_dot, *l_flow, *l_flow_w;
 static struct { lv_obj_t *fill, *soc, *amps, *ah, *err; } B[2];
-static lv_obj_t *sp_box, *l_roomnow;   // room setpoint block: only this follows the heating switch
+static lv_obj_t *l_roomnow, *sp_dim[4];   // setpoint controls dim with the heating switch; the room reading doesn't
 static lv_obj_t *l_hsub, *sw_heat, *ctrls, *b_minus, *b_plus, *l_sp, *l_unit, *seg_water, *seg_fan;
 static bool s_unit_f = false;
 
@@ -179,7 +179,7 @@ static void heater_card(lv_obj_t *v)
 
     ctrls = w_col(c, 20);
     lv_obj_set_width(ctrls, LV_PCT(100));
-    lv_obj_t *sp = sp_box = w_rect(ctrls, C_INSET, 20);
+    lv_obj_t *sp = w_rect(ctrls, C_INSET, 20);
     lv_obj_set_size(sp, LV_PCT(100), LV_SIZE_CONTENT);
     lv_obj_set_style_pad_all(sp, 12, 0);
     lv_obj_set_flex_flow(sp, LV_FLEX_FLOW_ROW);
@@ -192,10 +192,11 @@ static void heater_card(lv_obj_t *v)
     lv_obj_set_flex_align(r, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
     l_sp = w_label(r, F_48, C_ORANGE, "--");
     l_unit = w_label(r, F_28, C_TXT2, "°C");
-    w_label(mid, F_14, C_MUTED, "Room setpoint");
+    lv_obj_t *cap = w_label(mid, F_14, C_MUTED, "Room setpoint");
     l_roomnow = w_label(mid, F_16, C_TXT2, "");
     b_plus = w_btn(sp, "+", F_40, 76, false, on_step, (void *)1);
     lv_obj_set_width(b_plus, 68); w_bg(b_plus, C_BTN); lv_obj_set_style_radius(b_plus, 16, 0);
+    sp_dim[0] = b_minus; sp_dim[1] = r; sp_dim[2] = cap; sp_dim[3] = b_plus;
 
     lv_obj_t *wg = w_col(ctrls, 10); lv_obj_set_width(wg, LV_PCT(100));
     w_label(wg, F_16, C_MUTED, "Hot water");
@@ -288,7 +289,7 @@ void ui_energy_refresh(const vd_model_t *m)
                    : !on ? (g_cfg.water == WATER_OFF ? "Off" : "Water only")
                    : g_cfg.water == WATER_OFF ? "Heating" : "Heating + water";
     w_fmt(l_hsub, "Truma Combi - %s", st);
-    lv_obj_set_style_opa(sp_box, on ? LV_OPA_COVER : LV_OPA_40, 0);
+    for (int i = 0; i < 4; i++) lv_obj_set_style_opa(sp_dim[i], on ? LV_OPA_COVER : LV_OPA_40, 0);
     w_enable(b_minus, on); w_enable(b_plus, on); w_enable(seg_water, true); w_enable(seg_fan, true);
     char b[12]; ui_fmt_temp(b, sizeof b, g_cfg.setpoint_c);
     w_fmt(l_sp, "%s", b);
