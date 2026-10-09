@@ -1304,6 +1304,10 @@ CONFIG_VD_OTA_KEY="vandeck"
 CONFIG_VD_TAILNET_HOSTNAME="vandeck"
 # default:
 CONFIG_VD_BATT_CAPACITY_AH=160
+# default:
+CONFIG_VD_PV_ARRAY_W=400
+# default:
+CONFIG_VD_PV_PERF_PCT=70
 
 #
 # Truma Combi (LIN)

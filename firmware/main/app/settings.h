@@ -2,7 +2,7 @@
 #include "model.h"
 
 #define VD_CFG_MAGIC 0x56444B31
-#define VD_CFG_VER   2   // 2: screen_timeout, brightness (appended; v1 blobs still load)
+#define VD_CFG_VER   3   // 2: screen_timeout, brightness; 3: weather location (appended; older blobs still load)
 
 typedef struct {
     bool paired;
@@ -24,7 +24,12 @@ typedef struct {
     // v2 (new fields go at the end so older blobs keep loading)
     uint8_t screen_timeout;    // SCREEN_TO_*
     uint8_t brightness;        // backlight %, 10..100
+    // v3
+    float wx_lat, wx_lon;      // weather location: the last Starlink fix, or one entered by hand
+    uint8_t wx_src;            // WX_SRC_*
 } vd_settings_t;
+
+enum { WX_SRC_NONE, WX_SRC_STARLINK, WX_SRC_MANUAL };
 
 enum { SCREEN_TO_30S, SCREEN_TO_1M, SCREEN_TO_5M, SCREEN_TO_NEVER };
 int settings_screen_timeout_ms(void);   // 0 = never

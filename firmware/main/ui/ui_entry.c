@@ -1,14 +1,19 @@
-// Full-screen text entry: Wi-Fi password, Victron BLE password (step 1), Victron encryption key (step 2), Tailscale auth key.
+// Full-screen text entry: Wi-Fi password, Victron BLE password (step 1), Victron encryption key (step 2), Tailscale auth key,
+// weather location.
 #include "ui_views.h"
 #include "ui_widgets.h"
 #include "ui.h"
 #include "net/wifi_svc.h"
 #include "net/tailnet_svc.h"
 #include "ble/ble_svc.h"
+#include "net/weather.h"
+#include "app/settings.h"
+#include <stdlib.h>
+#include <math.h>
 #include <string.h>
 #include <stdio.h>
 
-typedef enum { M_WIFI, M_VPIN, M_VKEY, M_TSKEY } mode_t_;
+typedef enum { M_WIFI, M_VPIN, M_VKEY, M_TSKEY, M_LOC } mode_t_;
 static lv_obj_t *s_root, *l_title, *l_step, *b_ok, *ta, *b_show, *l_count, *l_hint, *kb;
 static mode_t_ s_mode;
 static char s_ssid[33], s_pin[33];
@@ -20,9 +25,29 @@ static const char *HEX_MAP[] = { "0", "1", "2", "3", "4", "5", "6", "7", "\n",
 static const lv_buttonmatrix_ctrl_t HEX_CTRL[] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
                                                    4 | LV_BUTTONMATRIX_CTRL_CHECKED, 4 | LV_BUTTONMATRIX_CTRL_CHECKED };
 
+static const char *LOC_MAP[] = { "1", "2", "3", "4", "5", "-", "\n",
+                                 "6", "7", "8", "9", "0", ".", "\n",
+                                 ", ", "Clear", LV_SYMBOL_BACKSPACE, "" };
+static const lv_buttonmatrix_ctrl_t LOC_CTRL[] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                                                   2, 2 | LV_BUTTONMATRIX_CTRL_CHECKED, 2 | LV_BUTTONMATRIX_CTRL_CHECKED };
+
+// "52.2297, 21.0122": latitude then longitude in decimal degrees, separated by a comma and/or spaces.
+static bool parse_loc(const char *t, float *la, float *lo)
+{
+    char *e, *e2;
+    *la = strtof(t, &e);
+    if (e == t || (*e != ',' && *e != ' ')) return false;
+    while (*e == ',' || *e == ' ') e++;
+    *lo = strtof(e, &e2);
+    if (e2 == e) return false;
+    while (*e2 == ' ') e2++;
+    return !*e2 && fabsf(*la) <= 90 && fabsf(*lo) <= 180;
+}
+
 static bool valid(void)
 {
     size_t n = strlen(lv_textarea_get_text(ta));
+    if (s_mode == M_LOC) { float a, b; return parse_loc(lv_textarea_get_text(ta), &a, &b); }
     if (s_mode == M_TSKEY) return n >= 20 && !strncmp(lv_textarea_get_text(ta), "tskey-", 6);
     return s_mode == M_WIFI ? n >= 8 : s_mode == M_VPIN ? n >= 1 : n == 32;
 }
@@ -35,6 +60,11 @@ static void update(void)
     if (s_mode == M_VKEY) w_fmt(l_count, "%u/32", (unsigned)strlen(t)); else lv_label_set_text(l_count, "");
     if (s_mode == M_WIFI) { lv_label_set_text(l_hint, ok ? "Ready to connect" : "At least 8 characters"); w_color(l_hint, ok ? C_GREEN : C_MUTED); }
     if (s_mode == M_TSKEY) { lv_label_set_text(l_hint, ok ? "Ready to save" : "Starts with tskey-"); w_color(l_hint, ok ? C_GREEN : C_MUTED); }
+    if (s_mode == M_LOC) {
+        lv_label_set_text(l_hint, ok ? "Ready to save. Starlink's position replaces it once the dish shares one"
+                                     : "Latitude, longitude in decimal degrees. South and west are negative");
+        w_color(l_hint, ok ? C_GREEN : C_MUTED);
+    }
 }
 
 static void close_entry(void) { w_show(s_root, false); ui_request_refresh(); }
@@ -47,16 +77,18 @@ static void open(mode_t_ m, const char *title, const char *step, const char *hin
     lv_label_set_text(l_hint, hint);
     w_color(l_hint, C_MUTED);
     lv_textarea_set_text(ta, "");
-    lv_textarea_set_password_mode(ta, m != M_VKEY);
+    bool keypad = m == M_VKEY || m == M_LOC;
+    lv_textarea_set_password_mode(ta, !keypad);
     lv_textarea_set_max_length(ta, m == M_TSKEY ? 127 : m == M_WIFI ? 63 : 32);
-    lv_textarea_set_accepted_chars(ta, m == M_VKEY ? "0123456789ABCDEFabcdef" : NULL);
-    lv_textarea_set_placeholder_text(ta, m == M_VKEY ? "32 hex characters" : m == M_TSKEY ? "tskey-auth-..." : "Password");
-    w_show(b_show, m != M_VKEY);
+    lv_textarea_set_accepted_chars(ta, m == M_VKEY ? "0123456789ABCDEFabcdef" : m == M_LOC ? "0123456789.,- " : NULL);
+    lv_textarea_set_placeholder_text(ta, m == M_VKEY ? "32 hex characters" : m == M_TSKEY ? "tskey-auth-..."
+                                         : m == M_LOC ? "52.2297, 21.0122" : "Password");
+    w_show(b_show, !keypad);
     w_btn_text(b_show, "Show");
-    w_btn_text(b_ok, m == M_WIFI ? "Connect" : m == M_VPIN ? "Next" : m == M_TSKEY ? "Save" : "Pair");
-    lv_keyboard_set_mode(kb, m == M_VKEY ? LV_KEYBOARD_MODE_USER_1 : LV_KEYBOARD_MODE_TEXT_LOWER);
-    lv_obj_set_width(kb, m == M_VKEY ? 760 : LV_PCT(100));
-    lv_obj_set_height(kb, m == M_VKEY ? 220 : 300);
+    w_btn_text(b_ok, m == M_WIFI ? "Connect" : m == M_VPIN ? "Next" : m == M_TSKEY || m == M_LOC ? "Save" : "Pair");
+    lv_keyboard_set_mode(kb, m == M_VKEY ? LV_KEYBOARD_MODE_USER_1 : m == M_LOC ? LV_KEYBOARD_MODE_USER_2 : LV_KEYBOARD_MODE_TEXT_LOWER);
+    lv_obj_set_width(kb, keypad ? 760 : LV_PCT(100));
+    lv_obj_set_height(kb, keypad ? 220 : 300);
     update();
     w_show(s_root, true);
 }
@@ -72,6 +104,17 @@ void ui_entry_open_tailnet_key(void)
     open(M_TSKEY, "Tailscale auth key", "Tailnet", "From the Tailscale admin console: Settings > Keys. A reusable key lets the panel re-register on its own");
 }
 
+void ui_entry_open_location(void)
+{
+    open(M_LOC, "Weather location", "Weather", "");
+    if (g_cfg.wx_src != WX_SRC_NONE) {
+        char b[40];
+        snprintf(b, sizeof b, "%.4f, %.4f", g_cfg.wx_lat, g_cfg.wx_lon);
+        lv_textarea_set_text(ta, b);
+    }
+    update();
+}
+
 void ui_entry_open_victron(int cand)
 {
     s_cand = cand;
@@ -85,6 +128,12 @@ static void confirm(void)
     if (s_mode == M_WIFI) { wifi_svc_connect(s_ssid, t); close_entry(); }
     else if (s_mode == M_TSKEY) {
         if (tailnet_svc_set_auth_key(t) == ESP_OK) tailnet_svc_set_enabled(true);
+        close_entry();
+    }
+    else if (s_mode == M_LOC) {
+        float la, lo;
+        parse_loc(t, &la, &lo);
+        weather_set_location(la, lo);
         close_entry();
     }
     else if (s_mode == M_VPIN) {
@@ -178,6 +227,7 @@ void ui_entry_create(void)
     lv_keyboard_set_textarea(kb, ta);
     lv_keyboard_set_popovers(kb, false);
     lv_keyboard_set_map(kb, LV_KEYBOARD_MODE_USER_1, HEX_MAP, HEX_CTRL);
+    lv_keyboard_set_map(kb, LV_KEYBOARD_MODE_USER_2, LOC_MAP, LOC_CTRL);
     lv_obj_remove_event_cb(kb, lv_keyboard_def_event_cb);
     lv_obj_add_event_cb(kb, on_kb, LV_EVENT_VALUE_CHANGED, NULL);
     lv_obj_set_style_bg_opa(kb, LV_OPA_TRANSP, 0);

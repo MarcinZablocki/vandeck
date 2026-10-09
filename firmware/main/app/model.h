@@ -28,7 +28,21 @@ typedef struct {
     bool reachable; int64_t online_since_us; bool heating;
     float v[SL_NHIST];                       // NAN = not available
     float hist[SL_NHIST][SL_HIST_LEN]; uint8_t hist_n;
+    // Dish GPS position (get_location). loc_denied = the dish refused: "allow local access" is off in the Starlink app.
+    bool loc_ok, loc_denied; float lat, lon; int64_t loc_at_us;
 } vd_starlink_t;
+// Open-Meteo forecast. Times are unix seconds; utc_off is the forecast location's UTC offset, used for day/hour labels.
+#define WX_HOURS 8             // every 3 h over the next 24 h
+#define WX_DAYS  5
+typedef enum { WX_NO_LOC, WX_NO_NET, WX_FETCHING, WX_OK, WX_ERROR } vd_wx_state_t;
+typedef struct { int64_t t; float temp; uint8_t code, pop; bool day; } vd_wx_hour_t;
+typedef struct { int64_t t, sunrise, sunset; float tmax, tmin, rad_kwh_m2; uint8_t code, pop; } vd_wx_day_t;
+typedef struct {
+    vd_wx_state_t state; bool valid;          // valid = a forecast is held (it may be old when state is an error)
+    float lat, lon; int32_t utc_off; int64_t fetched;
+    float temp, feels, wind_kmh; uint8_t code, humidity; bool day;
+    vd_wx_hour_t hour[WX_HOURS]; vd_wx_day_t daily[WX_DAYS]; uint8_t n_hours, n_days;
+} vd_weather_t;
 typedef struct { char ssid[33]; int8_t rssi; bool secure; } vd_net_t;
 typedef struct { bool connected, scanning, failed; char joining[33]; vd_net_t nets[WIFI_MAX_NETS]; uint8_t n_nets; } vd_wifi_t;
 typedef struct { char name[24]; uint8_t addr[6]; uint8_t addr_type; int8_t rssi; } vd_cand_t;
@@ -45,6 +59,7 @@ typedef struct {
     vd_heater_t heater;
     vd_tank_t tank[2];
     vd_starlink_t sl;
+    vd_weather_t wx;
     vd_wifi_t wifi;
     uint8_t dev_state[ROLE_COUNT];
     vd_pair_t pair;

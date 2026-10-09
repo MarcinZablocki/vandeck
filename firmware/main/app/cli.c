@@ -4,6 +4,7 @@
 #include "settings.h"
 #include "ble/ble_svc.h"
 #include "net/tailnet_svc.h"
+#include "net/weather.h"
 #include "esp_console.h"
 #include "esp_netif.h"
 #include "esp_wifi.h"
@@ -15,6 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <time.h>
 
 static vd_model_t *snap(void)
 {
@@ -123,6 +125,25 @@ static void print_tailnet(const vd_model_t *m)
     printf("\n");
 }
 
+static void print_weather(const vd_model_t *m)
+{
+    static const char *SRC[] = { "none", "Starlink", "manual" };
+    static const char *ST[] = { "no location", "no network", "fetching", "ok", "fetch failed" };
+    const vd_weather_t *w = &m->wx;
+    printf("weather: %s, location %s", ST[w->state], SRC[g_cfg.wx_src]);
+    if (g_cfg.wx_src) printf(" %.4f, %.4f", g_cfg.wx_lat, g_cfg.wx_lon);
+    if (m->sl.reachable) printf(" (dish %s)", m->sl.loc_ok ? "reports its position" : m->sl.loc_denied ? "won't share its position" : "position pending");
+    printf("\n");
+    if (!w->valid) return;
+    printf("  now %.1f C (feels %.1f), %s, wind %.0f km/h, humidity %u %%, fetched %llds ago\n", w->temp, w->feels,
+           weather_text(w->code), w->wind_kmh, w->humidity, (long long)(time(NULL) - w->fetched));
+    for (int i = 0; i < w->n_days; i++) {
+        const vd_wx_day_t *d = &w->daily[i];
+        printf("  day %d: %5.1f / %5.1f C, %-18s rain %3u %%, sun %.2f kWh/m2 -> ~%.2f kWh\n", i, d->tmin, d->tmax,
+               weather_text(d->code), d->pop, d->rad_kwh_m2, weather_expected_kwh(d->rad_kwh_m2));
+    }
+}
+
 typedef void (*printer_t)(const vd_model_t *);
 
 static int run(printer_t p)
@@ -137,7 +158,7 @@ static int run(printer_t p)
 
 static void print_all(const vd_model_t *m)
 {
-    print_batt(m); print_solar(m); print_heater(m); print_tanks(m); print_starlink(m); print_wifi(m); print_tailnet(m);
+    print_batt(m); print_solar(m); print_heater(m); print_tanks(m); print_starlink(m); print_weather(m); print_wifi(m); print_tailnet(m);
 }
 
 static int c_status(int c, char **v) { return run(print_all); }
@@ -147,6 +168,17 @@ static int c_heater(int c, char **v) { return run(print_heater); }
 static int c_tanks(int c, char **v) { return run(print_tanks); }
 static int c_starlink(int c, char **v) { return run(print_starlink); }
 static int c_wifi(int c, char **v) { return run(print_wifi); }
+static int c_weather(int argc, char **argv)
+{
+    if (argc > 1) {
+        if (!strcmp(argv[1], "refresh")) { weather_refresh(); printf("fetching\n"); }
+        else if (!strcmp(argv[1], "loc") && argc > 3) {
+            if (!weather_set_location(strtof(argv[2], NULL), strtof(argv[3], NULL))) { printf("latitude -90..90, longitude -180..180\n"); return 1; }
+            printf("location set (Starlink's position replaces it once the dish reports one)\n");
+        } else { printf("usage: weather [refresh|loc <lat> <lon>]\n"); return 1; }
+    }
+    return run(print_weather);
+}
 static int c_tailnet(int argc, char **argv)
 {
     if (argc > 1) {
@@ -226,6 +258,7 @@ static const esp_console_cmd_t CMDS[] = {
     { .command = "heater",   .help = "Truma heater: LIN link, settings, room temperature", .func = c_heater },
     { .command = "tanks",    .help = "Tank levels (LPG, grey water)", .func = c_tanks },
     { .command = "starlink", .help = "Starlink power and dish statistics", .func = c_starlink },
+    { .command = "weather",  .help = "Forecast and its location; 'loc <lat> <lon>' sets one by hand, 'refresh' fetches now", .hint = "[refresh|loc <lat> <lon>]", .func = c_weather },
     { .command = "net",      .help = "Wi-Fi connection the panel is using (BreezyBox 'wifi' manages networks)", .func = c_wifi },
     { .command = "tailnet",  .help = "Tailscale link: show state; on|off, 'key <tskey-...>' to register, 'forget' to leave the tailnet", .hint = "[on|off|key <k>|forget]", .func = c_tailnet },
     { .command = "ble",      .help = "Paired BLE devices: signal, last seen, reading age, read success counters", .hint = "[reset]", .func = c_ble },

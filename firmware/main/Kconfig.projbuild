@@ -27,6 +27,20 @@ config VD_BATT_CAPACITY_AH
     int "Capacity of one battery (Ah)"
     default 160
 
+config VD_PV_ARRAY_W
+    int "Solar array peak power (W)"
+    default 400
+    help
+        Used with the weather forecast's daily irradiation to estimate tomorrow's solar yield.
+
+config VD_PV_PERF_PCT
+    int "Solar performance ratio (%)"
+    range 30 100
+    default 70
+    help
+        Share of the panels' rated output that ends up in the battery on flat roof mounting: heat, wiring, MPPT
+        losses and the charger cutting back once the battery is full. Tune it if the forecast is off.
+
 menu "Truma Combi (LIN)"
     choice VD_LIN_MODE
         prompt "LIN role"

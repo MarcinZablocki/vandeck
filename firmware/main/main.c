@@ -11,6 +11,7 @@
 #include "net/wifi_svc.h"
 #include "net/time_svc.h"
 #include "net/starlink.h"
+#include "net/weather.h"
 #include "net/ota_svc.h"
 #include "net/tailnet_svc.h"
 #include "net/log_svc.h"
@@ -52,6 +53,7 @@ static void startup(void *arg)
     truma_init();
     tanks_init();
     starlink_init();
+    weather_init();
 #if CONFIG_VD_SIMULATE
     sim_start();
 #endif

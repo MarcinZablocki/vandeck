@@ -48,6 +48,7 @@ void settings_load(void)
             memcpy(&g_cfg, &tmp, sz);
             if (ver < 2) { g_cfg.screen_timeout = SCREEN_TO_5M; g_cfg.brightness = 80; }
             if (g_cfg.brightness < 10 || g_cfg.brightness > 100) g_cfg.brightness = 80;
+            if (g_cfg.wx_src > WX_SRC_MANUAL) g_cfg.wx_src = WX_SRC_NONE;
             g_cfg.ver = VD_CFG_VER;
             ESP_LOGI("cfg", "loaded settings v%u", ver);
         }

@@ -3,19 +3,21 @@
 #include "ui_views.h"
 #include "board/board.h"
 #include "ui_widgets.h"
+#include "ui_icons.h"
 #include "app/settings.h"
 #include "net/time_svc.h"
 #include <time.h>
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 
 static vd_model_t s_m;
 static uint32_t s_ver = UINT32_MAX;
 static time_t s_sec;
 static int s_view;
-static lv_obj_t *s_views[4];
-static lv_obj_t *l_time, *l_date, *l_demo, *d_wifi, *d_ble, *l_ble;
-static const char *VIEW_MAP[] = { "Energy", "Solar", "Tanks", "Starlink", "" };
+static lv_obj_t *s_views[V_COUNT];
+static struct { lv_obj_t *box, *icon, *lbl; } s_nav[V_COUNT];
+static lv_obj_t *l_time, *l_ampm, *l_date, *l_demo, *d_wifi, *d_ble, *l_ble;
 
 const vd_model_t *ui_model(void) { return &s_m; }
 void ui_request_refresh(void) { s_ver = UINT32_MAX; }
@@ -25,33 +27,65 @@ void ui_fmt_temp(char *b, size_t n, float c)
     if (g_cfg.unit_f) snprintf(b, n, "%d", (int)lroundf(c * 9 / 5 + 32));
     else snprintf(b, n, "%.1f", c);
 }
-
-static void on_view(lv_event_t *e)
+void ui_fmt_deg(char *b, size_t n, float c)
 {
-    s_view = w_seg_get(e);
-    for (int i = 0; i < 4; i++) w_show(s_views[i], i == s_view);
+    if (isnan(c)) snprintf(b, n, "--");
+    else snprintf(b, n, "%d°", (int)lroundf(g_cfg.unit_f ? c * 9 / 5 + 32 : c));
+}
+
+void ui_show_view(int v)
+{
+    s_view = v;
+    for (int i = 0; i < V_COUNT; i++) {
+        bool on = i == v;
+        w_show(s_views[i], on);
+        lv_obj_set_style_bg_opa(s_nav[i].box, on ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
+        w_color(s_nav[i].icon, on ? C_TXT : C_MUTED);
+        w_color(s_nav[i].lbl, on ? C_TXT : C_MUTED);
+    }
     ui_request_refresh();
 }
+static void on_nav(lv_event_t *e) { ui_show_view((int)(intptr_t)lv_event_get_user_data(e)); }
 static void on_settings(lv_event_t *e) { ui_settings_open(); }
 
-static void refresh_topbar(const vd_model_t *m)
+// The weather entry shows the current conditions instead of a fixed icon.
+static void refresh_wx_nav(const vd_model_t *m)
+{
+    const vd_weather_t *w = &m->wx;
+    bool on = s_view == V_WEATHER;
+    if (w->valid) {
+        char t[16];
+        ui_fmt_deg(t, sizeof t, w->temp);
+        w_fmt(s_nav[V_WEATHER].lbl, "%s%s", t, g_cfg.unit_f ? "F" : "C");
+        lv_label_set_text(s_nav[V_WEATHER].icon, ui_wx_icon(w->code, w->day));
+        w_color(s_nav[V_WEATHER].icon, ui_wx_color(w->code, w->day));
+        w_color(s_nav[V_WEATHER].lbl, on ? C_TXT : C_TXT2);
+    } else {
+        lv_label_set_text(s_nav[V_WEATHER].lbl, "Weather");
+        lv_label_set_text(s_nav[V_WEATHER].icon, IC_WX_PARTLY);
+    }
+}
+
+static void refresh_rail(const vd_model_t *m)
 {
     static const char *WD[] = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
     static const char *MO[] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
-    if (!time_valid()) { lv_label_set_text(l_time, "--:--"); lv_label_set_text(l_date, "Clock not set"); }
+    if (!time_valid()) { lv_label_set_text(l_time, "--:--"); lv_label_set_text(l_date, "No clock"); w_show(l_ampm, false); }
     else {
         time_t t = time(NULL); struct tm lt; localtime_r(&t, &lt);
-        if (g_cfg.h12) w_fmt(l_time, "%d:%02d %s", lt.tm_hour % 12 ? lt.tm_hour % 12 : 12, lt.tm_min, lt.tm_hour < 12 ? "AM" : "PM");
+        if (g_cfg.h12) w_fmt(l_time, "%d:%02d", lt.tm_hour % 12 ? lt.tm_hour % 12 : 12, lt.tm_min);
         else w_fmt(l_time, "%02d:%02d", lt.tm_hour, lt.tm_min);
+        lv_label_set_text(l_ampm, lt.tm_hour < 12 ? "AM" : "PM");
+        w_show(l_ampm, g_cfg.h12);
         w_fmt(l_date, "%s %d %s", WD[lt.tm_wday], lt.tm_mday, MO[lt.tm_mon]);
     }
     w_show(l_demo, m->demo);
     w_bg(d_wifi, m->wifi.connected ? C_GREEN : g_cfg.wifi_on ? C_AMBER : C_FAINT);
-    int paired = 0, on = 0;
-    for (int r = 0; r < ROLE_COUNT; r++) { if (g_cfg.dev[r].paired) paired++; if (m->dev_state[r] == DEV_ON) on++; }
+    int on = 0;
+    for (int r = 0; r < ROLE_COUNT; r++) if (m->dev_state[r] == DEV_ON) on++;
     w_fmt(l_ble, "BLE %d/%d", on, ROLE_COUNT);
     w_bg(d_ble, on == ROLE_COUNT ? C_GREEN : on ? C_AMBER : C_FAINT);
-    (void)paired;
+    refresh_wx_nav(m);
 }
 
 // Firmware update overlay on the top layer: progress while an OTA upload is written, the reason if it fails.
@@ -106,24 +140,82 @@ static void tick(lv_timer_t *t)
     time_t now = time(NULL);
     if (s_m.version == s_ver && now == s_sec) return;
     s_ver = s_m.version; s_sec = now;
-    refresh_topbar(&s_m);
+    refresh_rail(&s_m);
     refresh_ota(&s_m);
     switch (s_view) {
-    case 0: ui_energy_refresh(&s_m); break;
-    case 1: ui_solar_refresh(&s_m); break;
-    case 2: ui_tanks_refresh(&s_m); break;
-    default: ui_starlink_refresh(&s_m); break;
+    case V_ENERGY: ui_energy_refresh(&s_m); break;
+    case V_SOLAR: ui_solar_refresh(&s_m); break;
+    case V_TANKS: ui_tanks_refresh(&s_m); break;
+    case V_STARLINK: ui_starlink_refresh(&s_m); break;
+    default: ui_weather_refresh(&s_m); break;
     }
     ui_settings_refresh(&s_m);
 }
 
 static lv_obj_t *status_item(lv_obj_t *p, const char *txt, lv_obj_t **dot, lv_obj_t **lbl)
 {
-    lv_obj_t *r = w_row(p, 8);
-    *dot = w_dot(r, 10, C_FAINT);
-    lv_obj_t *l = w_label(r, F_16, C_TXT2, txt);
+    lv_obj_t *r = w_row(p, 6);
+    *dot = w_dot(r, 8, C_FAINT);
+    lv_obj_t *l = w_label(r, F_14, C_TXT2, txt);
     if (lbl) *lbl = l;
     return r;
+}
+
+// A rail button: icon over a short label. Pages get the selected look from ui_show_view().
+static lv_obj_t *rail_item(lv_obj_t *p, const char *icon, const char *txt, lv_obj_t **ic, lv_obj_t **lbl,
+                           lv_event_cb_t cb, void *ud)
+{
+    lv_obj_t *b = w_rect(p, C_CARD, 18);
+    lv_obj_set_style_bg_opa(b, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_bg_opa(b, LV_OPA_COVER, LV_STATE_PRESSED);
+    lv_obj_set_style_bg_color(b, HEX(C_INSET), LV_STATE_PRESSED);
+    lv_obj_set_size(b, LV_PCT(100), 64);
+    lv_obj_add_flag(b, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_flex_flow(b, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(b, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_row(b, 2, 0);
+    lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, ud);
+    lv_obj_t *i = w_label(b, F_ICON32, C_MUTED, icon);
+    lv_obj_t *l = w_label(b, F_14, C_MUTED, txt);
+    if (ic) *ic = i;
+    if (lbl) *lbl = l;
+    return b;
+}
+
+static void nav_item(lv_obj_t *p, int v, const char *icon, const char *txt)
+{
+    s_nav[v].box = rail_item(p, icon, txt, &s_nav[v].icon, &s_nav[v].lbl, on_nav, (void *)(intptr_t)v);
+}
+
+// Left rail: clock, the weather entry (live conditions), the pages, then connection status and Settings.
+static void rail_create(lv_obj_t *scr)
+{
+    lv_obj_t *rail = w_col(scr, 6);
+    lv_obj_set_size(rail, 96, LV_PCT(100));
+    lv_obj_set_flex_align(rail, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    lv_obj_t *tr = w_row(rail, 3);
+    lv_obj_set_flex_align(tr, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_END);
+    l_time = w_label(tr, F_24, C_TXT, "--:--");
+    l_ampm = w_label(tr, F_14, C_TXT2, "");
+    l_date = w_label(rail, F_14, C_MUTED, "");
+    l_demo = w_label(rail, F_14, C_AMBER, "DEMO");
+
+    lv_obj_t *gap = w_box(rail);
+    lv_obj_set_height(gap, 4);
+    nav_item(rail, V_WEATHER, IC_WX_PARTLY, "Weather");
+    lv_obj_t *ln = w_rect(rail, C_LINE, 0);
+    lv_obj_set_size(ln, 56, 2);
+    nav_item(rail, V_ENERGY, IC_ENERGY, "Energy");
+    nav_item(rail, V_SOLAR, IC_SOLAR, "Solar");
+    nav_item(rail, V_TANKS, IC_TANKS, "Tanks");
+    nav_item(rail, V_STARLINK, IC_STARLINK, "Starlink");
+
+    w_spacer(rail);
+    lv_obj_t *st = w_col(rail, 4);
+    status_item(st, "Wi-Fi", &d_wifi, NULL);
+    status_item(st, "BLE 0/4", &d_ble, &l_ble);
+    rail_item(rail, IC_SETTINGS, "Settings", NULL, NULL, on_settings, NULL);
 }
 
 void ui_init(void)
@@ -132,50 +224,21 @@ void ui_init(void)
     lv_obj_set_style_bg_color(scr, HEX(C_BG), 0);
     lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
     lv_obj_set_style_text_color(scr, HEX(C_TXT), 0);
-    lv_obj_set_style_pad_hor(scr, 16, 0);
-    lv_obj_set_style_pad_bottom(scr, 16, 0);
-    lv_obj_set_flex_flow(scr, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_all(scr, 16, 0);
+    lv_obj_set_style_pad_column(scr, 12, 0);
+    lv_obj_set_flex_flow(scr, LV_FLEX_FLOW_ROW);
     lv_obj_remove_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
 
-    // Side blocks size to their content; the tabs centre in the space between them so they never overlap.
-    static int32_t tcols[] = { LV_GRID_CONTENT, LV_GRID_FR(1), LV_GRID_CONTENT, LV_GRID_TEMPLATE_LAST };
-    static int32_t trows[] = { LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST };
-    lv_obj_t *top = w_box(scr);
-    lv_obj_set_size(top, LV_PCT(100), 60);
-    lv_obj_set_grid_dsc_array(top, tcols, trows);
-    lv_obj_set_style_pad_column(top, 16, 0);
-
-    lv_obj_t *left = w_row(top, 14);
-    lv_obj_set_grid_cell(left, LV_GRID_ALIGN_START, 0, 1, LV_GRID_ALIGN_CENTER, 0, 1);
-    lv_obj_set_flex_align(left, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_END);
-    l_time = w_label(left, F_26, C_TXT, "--:--");
-    l_date = w_label(left, F_18, C_MUTED, "");
-    l_demo = w_label(left, F_14, C_AMBER, "DEMO");
-
-    lv_obj_t *seg = w_seg(top, VIEW_MAP, 48, F_16, on_view, NULL);
-    lv_obj_set_width(seg, 460);
-    lv_obj_set_style_bg_color(seg, HEX(C_CARD), 0);
-    lv_obj_set_style_bg_color(seg, HEX(C_CARD), LV_PART_ITEMS);
-    lv_obj_set_style_radius(seg, 22, 0);
-    lv_obj_set_style_pad_all(seg, 4, 0);
-    lv_obj_set_grid_cell(seg, LV_GRID_ALIGN_CENTER, 1, 1, LV_GRID_ALIGN_CENTER, 0, 1);
-    w_seg_set(seg, 0);
-
-    lv_obj_t *right = w_row(top, 22);
-    lv_obj_set_grid_cell(right, LV_GRID_ALIGN_END, 2, 1, LV_GRID_ALIGN_CENTER, 0, 1);
-    status_item(right, "Wi-Fi", &d_wifi, NULL);
-    status_item(right, "BLE 0/4", &d_ble, &l_ble);
-    lv_obj_t *sb = w_btn(right, "Settings", F_16, 44, false, on_settings, NULL);
-    lv_obj_set_style_radius(sb, 22, 0);
-
+    rail_create(scr);
     lv_obj_t *content = w_box(scr);
-    lv_obj_set_width(content, LV_PCT(100));
+    lv_obj_set_height(content, LV_PCT(100));
     lv_obj_set_flex_grow(content, 1);
-    s_views[0] = ui_energy_create(content);
-    s_views[1] = ui_solar_create(content);
-    s_views[2] = ui_tanks_create(content);
-    s_views[3] = ui_starlink_create(content);
-    for (int i = 1; i < 4; i++) w_show(s_views[i], false);
+    s_views[V_ENERGY] = ui_energy_create(content);
+    s_views[V_SOLAR] = ui_solar_create(content);
+    s_views[V_TANKS] = ui_tanks_create(content);
+    s_views[V_STARLINK] = ui_starlink_create(content);
+    s_views[V_WEATHER] = ui_weather_create(content);
+    ui_show_view(V_ENERGY);
 
     ui_settings_create();
     ui_entry_create();

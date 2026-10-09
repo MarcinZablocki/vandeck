@@ -16,10 +16,13 @@ static const char *TAG = "starlink";
 #define SL_URL "http://192.168.100.1:9201/SpaceX.API.Device.Device/Handle"
 
 // Request oneof fields
-#define REQ_REBOOT      1001
-#define REQ_GET_STATUS  1004
-// Response oneof field
+#define REQ_REBOOT       1001
+#define REQ_GET_STATUS   1004
+#define REQ_GET_LOCATION 1017
+// Response oneof fields
 #define RESP_DISH_STATUS 2004
+#define RESP_LOCATION    1017   // GetLocationResponse: lla = 1 (LLAPosition: lat = 1, lon = 2, doubles) — VERIFY
+#define LOC_EVERY_US     (5 * 60 * 1000000LL)
 // DishGetStatusResponse fields — VERIFY
 #define F_POP_DROP_RATE  1003   // float, 0..1
 #define F_OBSTRUCTION    1004   // message; fraction_obstructed = field 1 (float)
@@ -90,6 +93,20 @@ static void resp_cb(uint32_t f, int wt, uint64_t v, const uint8_t *b, uint32_t l
     if (f == RESP_DISH_STATUS && wt == 2) { ((status_t *)ctx)->got = true; pb_walk(b, b + l, dish_cb, ctx); }
 }
 
+typedef struct { double lat, lon; bool lat_ok, lon_ok; } loc_t;
+
+static void lla_cb(uint32_t f, int wt, uint64_t v, const uint8_t *b, uint32_t l, void *ctx)
+{
+    loc_t *p = ctx;
+    if (wt != 1) return;
+    double d; memcpy(&d, &v, 8);
+    if (f == 1) { p->lat = d; p->lat_ok = true; } else if (f == 2) { p->lon = d; p->lon_ok = true; }
+}
+static void loc_cb(uint32_t f, int wt, uint64_t v, const uint8_t *b, uint32_t l, void *ctx)
+{ if (f == 1 && wt == 2) pb_walk(b, b + l, lla_cb, ctx); }
+static void loc_resp_cb(uint32_t f, int wt, uint64_t v, const uint8_t *b, uint32_t l, void *ctx)
+{ if (f == RESP_LOCATION && wt == 2) pb_walk(b, b + l, loc_cb, ctx); }
+
 static int grpc_call(uint32_t req_field, uint8_t *resp, int cap)
 {
     uint8_t body[16]; uint8_t msg[8];
@@ -120,9 +137,30 @@ static void push(int k, float v)
     else { memmove(M.sl.hist[k], M.sl.hist[k] + 1, (SL_HIST_LEN - 1) * sizeof(float)); M.sl.hist[k][SL_HIST_LEN - 1] = v; }
 }
 
+// Ask the dish where it is. It only answers with "allow access on local network" switched on in the Starlink app
+// (Settings > Advanced > Debug data); otherwise the reply carries no message, only a grpc-status in the trailers.
+static void poll_location(uint8_t *buf, int cap)
+{
+    int n = grpc_call(REQ_GET_LOCATION, buf, cap);
+    loc_t p = { 0 };
+    if (n > 5 && buf[0] == 0) {
+        uint32_t len = (uint32_t)buf[1] << 24 | buf[2] << 16 | buf[3] << 8 | buf[4];
+        if (len <= (uint32_t)n - 5) pb_walk(buf + 5, buf + 5 + len, loc_resp_cb, &p);
+    }
+    bool ok = p.lat_ok && p.lon_ok && fabs(p.lat) <= 90 && fabs(p.lon) <= 180 && (p.lat != 0 || p.lon != 0);
+    model_lock();
+    M.sl.loc_ok = ok;
+    M.sl.loc_denied = !ok && n >= 0;          // the dish answered, but without a position
+    if (ok) { M.sl.lat = p.lat; M.sl.lon = p.lon; M.sl.loc_at_us = now_us(); }
+    model_commit();
+    if (ok) ESP_LOGI(TAG, "location %.4f, %.4f", p.lat, p.lon);
+    else ESP_LOGI(TAG, "no location from the dish (enable local access in the Starlink app)");
+}
+
 static void task(void *arg)
 {
     static uint8_t buf[4096];
+    int64_t loc_next = 0;
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(2000));
         model_lock();
@@ -154,7 +192,9 @@ static void task(void *arg)
             if (M.sl.hist_n < SL_HIST_LEN) M.sl.hist_n++;
             M.sl.heating = s.heating;
         }
+        if (!s.got) { M.sl.loc_ok = false; M.sl.loc_denied = false; loc_next = 0; }
         model_commit();
+        if (s.got && now_us() >= loc_next) { poll_location(buf, sizeof buf); loc_next = now_us() + LOC_EVERY_US; }
     }
 }
 

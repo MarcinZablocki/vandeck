@@ -40,7 +40,7 @@ static void tile(lv_obj_t *g, int k, int col, int row, const char *label, const 
 
 lv_obj_t *ui_starlink_create(lv_obj_t *p)
 {
-    static int32_t cols[] = { 280, LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST };
+    static int32_t cols[] = { 240, LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST };
     static int32_t rows[] = { LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST };
     lv_obj_t *v = w_box(p);
     lv_obj_set_size(v, LV_PCT(100), LV_PCT(100));

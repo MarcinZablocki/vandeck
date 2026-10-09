@@ -146,7 +146,7 @@ static void battery_card(lv_obj_t *v)
         lv_obj_set_grid_cell(col, LV_GRID_ALIGN_STRETCH, i, 1, LV_GRID_ALIGN_STRETCH, 0, 1);
         lv_obj_set_flex_align(col, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
         lv_obj_t *bar = w_rect(col, C_INSET, 20);
-        lv_obj_set_width(bar, 92);
+        lv_obj_set_width(bar, 84);
         lv_obj_set_flex_grow(bar, 1);
         B[i].fill = w_rect(bar, C_GREEN, 20);
         lv_obj_set_size(B[i].fill, LV_PCT(100), LV_PCT(0));
@@ -172,6 +172,9 @@ static void heater_card(lv_obj_t *v)
     lv_obj_set_grid_cell(c, LV_GRID_ALIGN_STRETCH, 2, 1, LV_GRID_ALIGN_STRETCH, 0, 1);
     lv_obj_set_style_pad_row(c, 20, 0);
     lv_obj_t *h = w_header(c, "Heater", "Truma Combi", &l_hsub);
+    lv_obj_set_flex_grow(lv_obj_get_parent(l_hsub), 1);   // the status line shortens with "..." before the switch
+    lv_obj_set_size(l_hsub, LV_PCT(100), lv_font_get_line_height(F_14));
+    lv_label_set_long_mode(l_hsub, LV_LABEL_LONG_DOT);
     sw_heat = w_switch(h, on_heat, NULL);
 
     ctrls = w_col(c, 20);
@@ -182,7 +185,7 @@ static void heater_card(lv_obj_t *v)
     lv_obj_set_flex_flow(sp, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(sp, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     b_minus = w_btn(sp, "-", F_40, 76, false, on_step, (void *)-1);
-    lv_obj_set_width(b_minus, 76); w_bg(b_minus, C_BTN); lv_obj_set_style_radius(b_minus, 16, 0);
+    lv_obj_set_width(b_minus, 68); w_bg(b_minus, C_BTN); lv_obj_set_style_radius(b_minus, 16, 0);
     lv_obj_t *mid = w_col(sp, 4);
     lv_obj_set_flex_align(mid, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_t *r = w_row(mid, 2);
@@ -192,7 +195,7 @@ static void heater_card(lv_obj_t *v)
     w_label(mid, F_14, C_MUTED, "Room setpoint");
     l_roomnow = w_label(mid, F_16, C_TXT2, "");
     b_plus = w_btn(sp, "+", F_40, 76, false, on_step, (void *)1);
-    lv_obj_set_width(b_plus, 76); w_bg(b_plus, C_BTN); lv_obj_set_style_radius(b_plus, 16, 0);
+    lv_obj_set_width(b_plus, 68); w_bg(b_plus, C_BTN); lv_obj_set_style_radius(b_plus, 16, 0);
 
     lv_obj_t *wg = w_col(ctrls, 10); lv_obj_set_width(wg, LV_PCT(100));
     w_label(wg, F_16, C_MUTED, "Hot water");
@@ -212,7 +215,7 @@ static void heater_card(lv_obj_t *v)
 
 lv_obj_t *ui_energy_create(lv_obj_t *p)
 {
-    static int32_t cols[] = { 292, 280, LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST };
+    static int32_t cols[] = { 256, 248, LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST };
     static int32_t rows[] = { LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST };
     lv_obj_t *v = w_box(p);
     lv_obj_set_size(v, LV_PCT(100), LV_PCT(100));

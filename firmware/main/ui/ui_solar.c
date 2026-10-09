@@ -1,6 +1,12 @@
 #include "ui_views.h"
 #include "ui_widgets.h"
 #include "app/solar_log.h"
+#include "app/settings.h"
+#include "net/time_svc.h"
+#include "net/weather.h"
+#include "ui.h"
+#include "ui_icons.h"
+#include <time.h>
 #include <stdio.h>
 #include <math.h>
 
@@ -11,6 +17,63 @@ static lv_obj_t *l_title, *l_note, *box_data, *box_none, *l_dy, *l_dmw, *l_dmv, 
 static const char *RANGE_MAP[] = { "7d", "14d", "30d", "" };
 static const char *MO[] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
 static const char *WD[] = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
+#define FC_DAYS 4
+static lv_obj_t *fc_none, *fc_days, *fc_col[FC_DAYS], *fc_ic[FC_DAYS], *fc_day[FC_DAYS], *fc_kwh[FC_DAYS];
+
+static void on_forecast(lv_event_t *e) { ui_show_view(V_WEATHER); }
+
+// Expected yield for the next days from the forecast's irradiation; tapping it opens the Weather page.
+static void forecast_strip(lv_obj_t *v)
+{
+    lv_obj_t *c = w_rect(v, C_CARD, 24);
+    lv_obj_set_grid_cell(c, LV_GRID_ALIGN_STRETCH, 0, 2, LV_GRID_ALIGN_STRETCH, 1, 1);
+    lv_obj_set_style_pad_hor(c, 24, 0);
+    lv_obj_set_flex_flow(c, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(c, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(c, 16, 0);
+    lv_obj_add_flag(c, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(c, on_forecast, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *t = w_col(c, 2);
+    lv_obj_set_width(t, 150);
+    w_label(t, F_18, C_TXT, "Forecast");
+    w_label(t, F_14, C_MUTED, "Expected yield");
+    fc_none = w_label(c, F_16, C_MUTED, "");
+    fc_days = w_row(c, 8);
+    lv_obj_set_flex_grow(fc_days, 1);
+    for (int i = 0; i < FC_DAYS; i++) {
+        lv_obj_t *d = fc_col[i] = w_row(fc_days, 10);
+        lv_obj_set_flex_grow(d, 1);
+        fc_ic[i] = w_label(d, F_ICON32, C_TXT2, "");
+        lv_obj_t *dc = w_col(d, 0);
+        fc_day[i] = w_label(dc, F_14, C_MUTED, "");
+        fc_kwh[i] = w_label(dc, F_20, C_AMBER, "");
+    }
+}
+
+static void forecast_refresh(const vd_model_t *m)
+{
+    const vd_weather_t *w = &m->wx;
+    w_show(fc_none, !w->valid);
+    w_show(fc_days, w->valid);
+    if (!w->valid) {
+        lv_label_set_text(fc_none, g_cfg.wx_src == WX_SRC_NONE ? "Needs a location - tap to open Weather" : "No forecast yet");
+        return;
+    }
+    int64_t now = time_valid() ? time(NULL) : w->fetched, today = (now + w->utc_off) / 86400;
+    int k = 0;
+    for (int i = 0; i < w->n_days && k < FC_DAYS; i++) {
+        const vd_wx_day_t *d = &w->daily[i];
+        int64_t dn = (d->t + w->utc_off) / 86400;
+        if (dn < today) continue;
+        lv_label_set_text(fc_day[k], dn == today ? "Today" : dn == today + 1 ? "Tomorrow" : WD[(dn + 4) % 7]);
+        lv_label_set_text(fc_ic[k], ui_wx_icon(d->code, true));
+        w_color(fc_ic[k], ui_wx_color(d->code, true));
+        if (isnan(d->rad_kwh_m2)) lv_label_set_text(fc_kwh[k], "--");
+        else w_fmt(fc_kwh[k], "~%.1f kWh", weather_expected_kwh(d->rad_kwh_m2));
+        w_show(fc_col[k++], true);
+    }
+    for (; k < FC_DAYS; k++) w_show(fc_col[k], false);
+}
 
 static void on_bar(lv_event_t *e) { s_sel = (int)(intptr_t)lv_event_get_user_data(e); ui_solar_refresh(NULL); }
 static void on_range(lv_event_t *e)
@@ -24,11 +87,11 @@ static void on_range(lv_event_t *e)
 lv_obj_t *ui_solar_create(lv_obj_t *p)
 {
     static int32_t cols[] = { LV_GRID_FR(1), 300, LV_GRID_TEMPLATE_LAST };
-    static int32_t rows[] = { LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST };
+    static int32_t rows[] = { LV_GRID_FR(1), 92, LV_GRID_TEMPLATE_LAST };
     lv_obj_t *v = w_box(p);
     lv_obj_set_size(v, LV_PCT(100), LV_PCT(100));
     lv_obj_set_grid_dsc_array(v, cols, rows);
-    lv_obj_set_style_pad_column(v, 12, 0);
+    lv_obj_set_style_pad_gap(v, 12, 0);
 
     lv_obj_t *c = w_card(v);
     lv_obj_set_grid_cell(c, LV_GRID_ALIGN_STRETCH, 0, 1, LV_GRID_ALIGN_STRETCH, 0, 1);
@@ -127,6 +190,7 @@ lv_obj_t *ui_solar_create(lv_obj_t *p)
         w_label(l, F_16, C_TXT2, SN[i]);
         st_time[i] = w_label(r, F_18, C_TXT, "--");
     }
+    forecast_strip(v);
     return v;
 }
 
@@ -137,7 +201,8 @@ static void fmt_min(lv_obj_t *l, int m)
 
 void ui_solar_refresh(const vd_model_t *m)
 {
-    (void)m;
+    if (!m) m = ui_model();
+    forecast_refresh(m);
     int32_t today = solar_log_today();
     if (today < 0) {
         lv_label_set_text(l_sum, "Set the clock to start logging");
@@ -175,7 +240,7 @@ void ui_solar_refresh(const vd_model_t *m)
         int32_t day = today - (NDAYS - 1 - i);
         bool show = i == NDAYS - 1 || (NDAYS - 1 - i) % every == 0 || (on && s_range != 30);
         if (!show) lv_label_set_text(lbls[i], "");
-        else if (i == NDAYS - 1) lv_label_set_text(lbls[i], "Today");
+        else if (i == NDAYS - 1 && s_range == 7) lv_label_set_text(lbls[i], "Today");   // too narrow at 14/30 days
         else if (s_range == 7) lv_label_set_text(lbls[i], WD[(day + 4) % 7]);
         else { int y; unsigned mo, d; civil_from_days(day, &y, &mo, &d); w_fmt(lbls[i], "%u", d); }
         w_color(lbls[i], on ? C_TXT : C_MUTED);
