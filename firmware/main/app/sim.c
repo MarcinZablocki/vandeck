@@ -38,6 +38,7 @@ static void tick(void *arg)
         b->volts = 13.3f; b->amps = net / 13.3f / 2 * (i ? 1.04f : 0.96f);
         b->remain_ah = b->soc * CONFIG_VD_BATT_CAPACITY_AH / 100.0f;
         b->full_ah = CONFIG_VD_BATT_CAPACITY_AH;
+        b->temp_c = i ? 14.5f : 15.0f;
         b->valid = true; b->ts_us = t;
     }
     if (!g_cfg.dev[ROLE_SHELLY].paired && M.sl.power) {

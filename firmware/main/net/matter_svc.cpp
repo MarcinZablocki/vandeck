@@ -3,7 +3,8 @@
 // Endpoints (ids are assigned in creation order, after the root node on 0):
 //   Battery 1, Battery 2  temperature sensor + Power Source (Battery, Rechargeable): the tile shows the battery's
 //                         temperature; the accessory details show its charge, charging state and low battery
-//   Battery bank          electrical sensor, DC power measurement: watts in (+, charging) or out (-) of the bank
+//   Battery bank          metered plug (its switch is a stand-in, always on): power drawn from the bank, its
+//                         voltage and current, and the energy drawn (kWh) for the Home app's Energy view
 //
 // Pairing is on-network only. The panel is already on Wi-Fi, so Matter doesn't need BLE, and leaving CHIPoBLE off
 // keeps NimBLE for VanDeck's own scanning. The setup passcode and discriminator are random per panel (vd_mt in NVS);
@@ -23,6 +24,10 @@
 #include <app/server/Server.h>
 #include <app/reporting/reporting.h>
 #include <app/clusters/electrical-power-measurement-server/ElectricalPowerMeasurementDelegate.h>
+#include <app/clusters/electrical-energy-measurement-server/CodegenIntegration.h>
+#include <app/clusters/temperature-measurement-server/TemperatureMeasurementCluster.h>
+#include <esp_matter_data_model_provider.h>
+#include "esp_timer.h"
 #include <crypto/CHIPCryptoPAL.h>
 #include <platform/CommissionableDataProvider.h>
 #include <platform/CHIPDeviceLayer.h>
@@ -124,6 +129,7 @@ static VdCommissionable s_commissionable;
 // --- Bank power: the Electrical Power Measurement cluster reads its values through a delegate
 
 namespace EPM = ElectricalPowerMeasurement;
+namespace EEM = ElectricalEnergyMeasurement;
 using MeasType = detail::MeasurementTypeEnum;
 using AccRange = detail::Structs::MeasurementAccuracyRangeStruct::Type;
 
@@ -213,8 +219,14 @@ static uint16_t add_battery(node_t *node, int i)
     return endpoint::get_id(ep);
 }
 
+// A metered plug: the shape Apple Home's Energy view lists (a bare Electrical Sensor endpoint doesn't show up at
+// all). The switch is a stand-in: it always reports on, and push_bank() turns it back on if someone switches it off.
 static uint16_t add_bank(node_t *node)
 {
+    endpoint::on_off_plug_in_unit::config_t pc;
+    pc.on_off.on_off = true;
+    endpoint_t *ep = endpoint::on_off_plug_in_unit::create(node, &pc, ENDPOINT_FLAG_NONE, nullptr);
+
     endpoint::electrical_sensor::config_t ec;
     // Power Topology needs exactly one topology; the bank's figures cover the whole node (esp-matter asserts
     // without one).
@@ -222,7 +234,11 @@ static uint16_t add_bank(node_t *node)
     cluster::electrical_power_measurement::config_t &pm = ec.with_electrical_power_measurement();
     pm.delegate = &s_bank;
     pm.feature_flags = cluster::electrical_power_measurement::feature::direct_current::get_id();
-    endpoint_t *ep = endpoint::electrical_sensor::create(node, &ec, ENDPOINT_FLAG_NONE, nullptr);
+    cluster::electrical_energy_measurement::config_t &em = ec.with_electrical_energy_measurement();
+    em.feature_flags = cluster::electrical_energy_measurement::feature::imported_energy::get_id() |
+                       cluster::electrical_energy_measurement::feature::cumulative_energy::get_id();
+    endpoint::electrical_sensor::add(ep, &ec);
+
     cluster_t *c = cluster::get(ep, EPM::Id);
     cluster::electrical_power_measurement::attribute::create_voltage(c, nullable<int64_t>());
     cluster::electrical_power_measurement::attribute::create_active_current(c, nullable<int64_t>());
@@ -231,15 +247,31 @@ static uint16_t add_bank(node_t *node)
 
 // --- Keeping the attributes current
 
-static void set(uint16_t ep, uint32_t cl, uint32_t at, esp_matter_attr_val_t v) { attribute::update(ep, cl, at, &v); }
+static void set(uint16_t ep, uint32_t cl, uint32_t at, esp_matter_attr_val_t v)
+{
+    esp_err_t e = attribute::update(ep, cl, at, &v);
+    if (e != ESP_OK) ESP_LOGW(TAG, "update %u/0x%lx/0x%lx: %s", ep, (unsigned long)cl, (unsigned long)at, esp_err_to_name(e));
+}
+
+// Temperature Measurement is one of CHIP's code-driven clusters: it keeps its own value, and attribute::update()
+// only reaches esp-matter's copy, which nobody reads (controllers saw null). Set it on the cluster itself.
+static void set_temperature(uint16_t ep, chip::app::DataModel::Nullable<int16_t> v)
+{
+    lock::ScopedChipStackLock lock(portMAX_DELAY);
+    chip::app::ServerClusterInterface *c =
+        data_model::provider::get_instance().registry().Get(chip::app::ConcreteClusterPath(ep, TemperatureMeasurement::Id));
+    if (!c) { ESP_LOGW(TAG, "no temperature cluster on endpoint %u", ep); return; }
+    if (static_cast<TemperatureMeasurementCluster *>(c)->SetMeasuredValue(v) != CHIP_NO_ERROR)
+        ESP_LOGW(TAG, "temperature on endpoint %u not set", ep);
+}
 
 static void push_battery(int i, const vd_batt_t *b)
 {
     uint16_t ep = s_ep_batt[i];
     bool ok = b->valid && !b->stale;
     namespace PA = PowerSource::Attributes;
-    set(ep, TemperatureMeasurement::Id, TemperatureMeasurement::Attributes::MeasuredValue::Id,
-        esp_matter_nullable_int16(ok && !isnan(b->temp_c) ? nullable<int16_t>((int16_t)lroundf(b->temp_c * 100)) : nullable<int16_t>()));
+    set_temperature(ep, ok && !isnan(b->temp_c) ? chip::app::DataModel::Nullable<int16_t>((int16_t)lroundf(b->temp_c * 100))
+                                                : chip::app::DataModel::Nullable<int16_t>());
     set(ep, PowerSource::Id, PA::Status::Id, esp_matter_enum8((uint8_t)(ok ? PowerSource::PowerSourceStatusEnum::kActive
                                                                           : PowerSource::PowerSourceStatusEnum::kUnavailable)));
     set(ep, PowerSource::Id, PA::BatPresent::Id, esp_matter_bool(b->valid));
@@ -257,6 +289,28 @@ static void push_battery(int i, const vd_batt_t *b)
     set(ep, PowerSource::Id, PA::BatChargeState::Id, esp_matter_enum8((uint8_t)cs));
 }
 
+// Energy drawn from the bank (mWh), kept in NVS every 50 Wh so the Home app's total doesn't restart from zero.
+static int64_t s_energy_mwh, s_energy_saved = -1, s_energy_at_us;
+
+static void energy_load(void)
+{
+    nvs_handle_t h;
+    if (nvs_open("vd_mt", NVS_READONLY, &h) == ESP_OK) { nvs_get_i64(h, "e_mwh", &s_energy_mwh); nvs_close(h); }
+    s_energy_saved = s_energy_mwh;
+}
+
+static void energy_save(void)
+{
+    nvs_handle_t h;
+    if (nvs_open("vd_mt", NVS_READWRITE, &h) != ESP_OK) return;
+    nvs_set_i64(h, "e_mwh", s_energy_mwh);
+    nvs_commit(h);
+    nvs_close(h);
+    s_energy_saved = s_energy_mwh;
+}
+
+// The Energy view is about consumption, so the plug reports what the bank supplies: power drawn from it (0 while
+// it charges), its voltage, and the discharge current.
 static void push_bank(const vd_model_t *m)
 {
     int n = 0;
@@ -266,11 +320,20 @@ static void push_bank(const vd_model_t *m)
         if (!b->valid || b->stale) continue;
         n++; w += b->volts * b->amps; v += b->volts; a += b->amps;
     }
+    float out_w = n && w < 0 ? -w : 0, out_a = n && a < 0 ? -a : 0;
+
+    int64_t now = esp_timer_get_time();
+    if (s_energy_at_us && n) s_energy_mwh += (int64_t)llroundf(out_w * (float)(now - s_energy_at_us) / 3.6e6f);   // W * us -> mWh
+    s_energy_at_us = now;
+    if (s_energy_mwh - s_energy_saved >= 50000) energy_save();
+
+    set(s_ep_bank, OnOff::Id, OnOff::Attributes::OnOff::Id, esp_matter_bool(true));
+
     lock::ScopedChipStackLock lock(portMAX_DELAY);
     using chip::app::DataModel::Nullable;
-    Nullable<int64_t> p = n ? Nullable<int64_t>((int64_t)lroundf(w * 1000)) : Nullable<int64_t>();
+    Nullable<int64_t> p = n ? Nullable<int64_t>((int64_t)lroundf(out_w * 1000)) : Nullable<int64_t>();
     Nullable<int64_t> vv = n ? Nullable<int64_t>((int64_t)lroundf(v / n * 1000)) : Nullable<int64_t>();
-    Nullable<int64_t> aa = n ? Nullable<int64_t>((int64_t)lroundf(a * 1000)) : Nullable<int64_t>();
+    Nullable<int64_t> aa = n ? Nullable<int64_t>((int64_t)lroundf(out_a * 1000)) : Nullable<int64_t>();
     // Report only real changes: 1 W, 50 mV, 100 mA. The controller sees every report.
     auto moved = [](const Nullable<int64_t> &o, const Nullable<int64_t> &nw, int64_t step) {
         return o.IsNull() != nw.IsNull() || (!o.IsNull() && llabs(o.Value() - nw.Value()) >= step);
@@ -278,6 +341,14 @@ static void push_bank(const vd_model_t *m)
     if (moved(s_bank.power, p, 1000)) { s_bank.power = p; MatterReportingAttributeChangeCallback(s_ep_bank, EPM::Id, EPM::Attributes::ActivePower::Id); }
     if (moved(s_bank.volts, vv, 50)) { s_bank.volts = vv; MatterReportingAttributeChangeCallback(s_ep_bank, EPM::Id, EPM::Attributes::Voltage::Id); }
     if (moved(s_bank.amps, aa, 100)) { s_bank.amps = aa; MatterReportingAttributeChangeCallback(s_ep_bank, EPM::Id, EPM::Attributes::ActiveCurrent::Id); }
+
+    static int64_t s_reported = -1;
+    if (s_energy_mwh - s_reported >= 1000 || s_reported < 0) {   // every Wh
+        s_reported = s_energy_mwh;
+        EEM::Structs::EnergyMeasurementStruct::Type e;
+        e.energy = s_energy_mwh;
+        EEM::NotifyCumulativeEnergyMeasured(s_ep_bank, Nullable<EEM::Structs::EnergyMeasurementStruct::Type>(e), Nullable<EEM::Structs::EnergyMeasurementStruct::Type>());
+    }
 }
 
 static void update_task(void *)
@@ -285,6 +356,13 @@ static void update_task(void *)
     static vd_model_t m;   // large (Starlink history): not on this task's stack
     for (int n = 0;; n++) {
         if (n == 6) guard_set(0);   // a minute up: this start is good
+        if (n % 6 == 0) {   // once a minute, at debug level (log matter debug): what controllers are being served
+            esp_matter_attr_val_t t1 = {}, p1 = {};
+            attribute::get_val(attribute::get(s_ep_batt[0], TemperatureMeasurement::Id, TemperatureMeasurement::Attributes::MeasuredValue::Id), &t1);
+            attribute::get_val(attribute::get(s_ep_batt[0], PowerSource::Id, PowerSource::Attributes::BatPercentRemaining::Id), &p1);
+            ESP_LOGD(TAG, "served: battery 1 %d (0.01 C), %u (half %%); bank %lld mW, %lld mWh",
+                     t1.val.i16, p1.val.u8, s_bank.power.IsNull() ? -1LL : (long long)s_bank.power.Value(), (long long)s_energy_mwh);
+        }
         model_snapshot(&m);
         for (int i = 0; i < 2; i++) push_battery(i, &m.batt[i]);
         push_bank(&m);
@@ -332,6 +410,7 @@ static void start_task(void *)
     set_custom_commissionable_data_provider(&s_commissionable);
 
     STEP("data model");
+    energy_load();
     node::config_t nc;
     node_t *node = node::create(&nc, on_attr, on_identify);
     if (!node) { s_state = MT_ERROR; vTaskDelete(NULL); }
