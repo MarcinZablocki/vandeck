@@ -346,7 +346,11 @@ static void set_fan(uint16_t ep, FC::FanModeEnum m)
         data_model::provider::get_instance().registry().Get(chip::app::ConcreteClusterPath(ep, FC::Id));
     if (!c) return;
     auto *f = static_cast<FanControlCluster *>(c);
+    // Home shows the percentage, which SetFanMode leaves alone: Off 0 %, Low 50 %, High 100 %.
+    chip::Percent pct = m == FC::FanModeEnum::kOff ? 0 : m == FC::FanModeEnum::kHigh ? 100 : 50;
     if (f->GetFanMode() != m) f->SetFanMode(m);
+    if (f->GetPercentSetting().IsNull() || f->GetPercentSetting().Value() != pct) f->SetPercentSetting(chip::app::DataModel::MakeNullable(pct));
+    if (f->GetPercentCurrent() != pct) f->SetPercentCurrent(pct);
 }
 
 // Apple Home shows one battery per accessory (every tile's settings show the same one), so the Power Source is the
