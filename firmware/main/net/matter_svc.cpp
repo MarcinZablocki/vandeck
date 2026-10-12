@@ -1,10 +1,10 @@
 // Matter node (esp-matter): the batteries for Apple Home. See matter_svc.h for what is exposed.
 //
 // Endpoints (ids are assigned in creation order, after the root node on 0):
-//   Battery 1, Battery 2  temperature sensor + Power Source (Battery, Rechargeable): the tile shows the battery's
-//                         temperature; the accessory details show its charge, charging state and low battery
+//   Battery 1, Battery 2  temperature sensors: each battery's temperature
 //   Battery bank          metered plug (its switch is a stand-in, always on): power drawn from the bank, its
-//                         voltage and current, and the energy drawn (kWh) for the Home app's Energy view
+//                         voltage and current, and the energy drawn (kWh) for the Home app's Energy view; and the
+//                         Power Source (bank charge, charging state, low battery) Home shows in every tile's settings
 //
 // Pairing is on-network only. The panel is already on Wi-Fi, so Matter doesn't need BLE, and leaving CHIPoBLE off
 // keeps NimBLE for VanDeck's own scanning. The setup passcode and discriminator are random per panel (vd_mt in NVS);
@@ -138,7 +138,7 @@ public:
     // mW, mV, mA; null while no battery is reporting
     chip::app::DataModel::Nullable<int64_t> power, volts, amps;
 
-    EPM::PowerModeEnum GetPowerMode() override { return EPM::PowerModeEnum::kDc; }
+    EPM::PowerModeEnum GetPowerMode() override { return EPM::PowerModeEnum::kAc; }
     uint8_t GetNumberOfMeasurementTypes() override { return 3; }
 
     CHIP_ERROR StartAccuracyRead() override { return CHIP_NO_ERROR; }
@@ -203,10 +203,16 @@ static uint16_t add_battery(node_t *node, int i)
     tc.temperature_measurement.max_measured_value = nullable<int16_t>(8000);
     endpoint_t *ep = endpoint::temperature_sensor::create(node, &tc, ENDPOINT_FLAG_NONE, nullptr);
 
+    return endpoint::get_id(ep);
+}
+
+// Apple Home shows one battery per accessory (every tile's settings show the same one), so the Power Source is the
+// bank's: average charge, charging state and low battery, on the bank endpoint.
+static void add_bank_source(endpoint_t *ep)
+{
     endpoint::power_source::config_t pc;
     pc.power_source.status = (uint8_t)PowerSource::PowerSourceStatusEnum::kUnavailable;
-    pc.power_source.order = (uint8_t)i;
-    snprintf(pc.power_source.description, sizeof pc.power_source.description, "Battery %d", i + 1);
+    snprintf(pc.power_source.description, sizeof pc.power_source.description, "Battery bank");
     pc.power_source.feature_flags = cluster::power_source::feature::battery::get_id() | cluster::power_source::feature::rechargeable::get_id();
     pc.power_source.features.battery.bat_replaceability = (uint8_t)PowerSource::BatReplaceabilityEnum::kUserReplaceable;
     pc.power_source.features.rechargeable.bat_functional_while_charging = true;
@@ -216,7 +222,6 @@ static uint16_t add_battery(node_t *node, int i)
     cluster::power_source::attribute::create_bat_percent_remaining(ps, nullable<uint8_t>(), nullable<uint8_t>(0), nullable<uint8_t>(200));
     cluster::power_source::attribute::create_bat_voltage(ps, nullable<uint32_t>(), nullable<uint32_t>(0), nullable<uint32_t>(30000));
     cluster::power_source::attribute::create_bat_present(ps, false);
-    return endpoint::get_id(ep);
 }
 
 // A metered plug: the shape Apple Home's Energy view lists (a bare Electrical Sensor endpoint doesn't show up at
@@ -233,11 +238,14 @@ static uint16_t add_bank(node_t *node)
     ec.power_topology.feature_flags = cluster::power_topology::feature::node_topology::get_id();
     cluster::electrical_power_measurement::config_t &pm = ec.with_electrical_power_measurement();
     pm.delegate = &s_bank;
-    pm.feature_flags = cluster::electrical_power_measurement::feature::direct_current::get_id();
+    // AC although the bank is DC: metered plugs, the kind Apple Home lists in Energy, declare AC.
+    pm.feature_flags = cluster::electrical_power_measurement::feature::alternating_current::get_id();
     cluster::electrical_energy_measurement::config_t &em = ec.with_electrical_energy_measurement();
     em.feature_flags = cluster::electrical_energy_measurement::feature::imported_energy::get_id() |
                        cluster::electrical_energy_measurement::feature::cumulative_energy::get_id();
     endpoint::electrical_sensor::add(ep, &ec);
+
+    add_bank_source(ep);
 
     cluster_t *c = cluster::get(ep, EPM::Id);
     cluster::electrical_power_measurement::attribute::create_voltage(c, nullable<int64_t>());
@@ -267,24 +275,36 @@ static void set_temperature(uint16_t ep, chip::app::DataModel::Nullable<int16_t>
 
 static void push_battery(int i, const vd_batt_t *b)
 {
-    uint16_t ep = s_ep_batt[i];
     bool ok = b->valid && !b->stale;
+    set_temperature(s_ep_batt[i], ok && !isnan(b->temp_c) ? chip::app::DataModel::Nullable<int16_t>((int16_t)lroundf(b->temp_c * 100))
+                                                          : chip::app::DataModel::Nullable<int16_t>());
+}
+
+static void push_bank_source(const vd_model_t *m)
+{
+    int n = 0;
+    float soc = 0, v = 0, a = 0;
+    for (int i = 0; i < 2; i++) {
+        const vd_batt_t *b = &m->batt[i];
+        if (!b->valid || b->stale) continue;
+        n++; soc += b->soc; v += b->volts; a += b->amps;
+    }
+    if (n) { soc /= n; v /= n; }
+    uint16_t ep = s_ep_bank;
     namespace PA = PowerSource::Attributes;
-    set_temperature(ep, ok && !isnan(b->temp_c) ? chip::app::DataModel::Nullable<int16_t>((int16_t)lroundf(b->temp_c * 100))
-                                                : chip::app::DataModel::Nullable<int16_t>());
-    set(ep, PowerSource::Id, PA::Status::Id, esp_matter_enum8((uint8_t)(ok ? PowerSource::PowerSourceStatusEnum::kActive
-                                                                          : PowerSource::PowerSourceStatusEnum::kUnavailable)));
-    set(ep, PowerSource::Id, PA::BatPresent::Id, esp_matter_bool(b->valid));
+    set(ep, PowerSource::Id, PA::Status::Id, esp_matter_enum8((uint8_t)(n ? PowerSource::PowerSourceStatusEnum::kActive
+                                                                         : PowerSource::PowerSourceStatusEnum::kUnavailable)));
+    set(ep, PowerSource::Id, PA::BatPresent::Id, esp_matter_bool(n > 0));
     set(ep, PowerSource::Id, PA::BatPercentRemaining::Id,
-        esp_matter_nullable_uint8(ok ? nullable<uint8_t>((uint8_t)lroundf(fminf(fmaxf(b->soc, 0), 100) * 2)) : nullable<uint8_t>()));
+        esp_matter_nullable_uint8(n ? nullable<uint8_t>((uint8_t)lroundf(fminf(fmaxf(soc, 0), 100) * 2)) : nullable<uint8_t>()));
     set(ep, PowerSource::Id, PA::BatVoltage::Id,
-        esp_matter_nullable_uint32(ok ? nullable<uint32_t>((uint32_t)lroundf(b->volts * 100) * 10) : nullable<uint32_t>()));   // 10 mV steps
-    if (!ok) return;
-    PowerSource::BatChargeLevelEnum lvl = b->soc <= 10 ? PowerSource::BatChargeLevelEnum::kCritical
-                                        : b->soc <= 20 ? PowerSource::BatChargeLevelEnum::kWarning : PowerSource::BatChargeLevelEnum::kOk;
+        esp_matter_nullable_uint32(n ? nullable<uint32_t>((uint32_t)lroundf(v * 100) * 10) : nullable<uint32_t>()));   // 10 mV steps
+    if (!n) return;
+    PowerSource::BatChargeLevelEnum lvl = soc <= 10 ? PowerSource::BatChargeLevelEnum::kCritical
+                                        : soc <= 20 ? PowerSource::BatChargeLevelEnum::kWarning : PowerSource::BatChargeLevelEnum::kOk;
     set(ep, PowerSource::Id, PA::BatChargeLevel::Id, esp_matter_enum8((uint8_t)lvl));
-    PowerSource::BatChargeStateEnum cs = b->amps > 0.3f ? PowerSource::BatChargeStateEnum::kIsCharging
-                                       : b->soc >= 99.5f ? PowerSource::BatChargeStateEnum::kIsAtFullCharge
+    PowerSource::BatChargeStateEnum cs = a > 0.3f ? PowerSource::BatChargeStateEnum::kIsCharging
+                                       : soc >= 99.5f ? PowerSource::BatChargeStateEnum::kIsAtFullCharge
                                        : PowerSource::BatChargeStateEnum::kIsNotCharging;
     set(ep, PowerSource::Id, PA::BatChargeState::Id, esp_matter_enum8((uint8_t)cs));
 }
@@ -365,6 +385,7 @@ static void update_task(void *)
         }
         model_snapshot(&m);
         for (int i = 0; i < 2; i++) push_battery(i, &m.batt[i]);
+        push_bank_source(&m);
         push_bank(&m);
         vTaskDelay(pdMS_TO_TICKS(10000));
     }
@@ -429,6 +450,18 @@ static void start_task(void *)
         if (GetQRCode(qr, rf) == CHIP_NO_ERROR) s_qr[qr.size()] = 0;
         if (GetManualPairingCode(mc, rf) == CHIP_NO_ERROR) s_manual[mc.size()] = 0;
         count_fabrics();
+        // The energy cluster starts with an empty accuracy record; give it a real one.
+        static AccRange s_erange;
+        s_erange.rangeMin = 0;
+        s_erange.rangeMax = 1000000000000LL;   // 1 GWh in mWh
+        s_erange.percentMax.SetValue(200);
+        EEM::Structs::MeasurementAccuracyStruct::Type acc;
+        acc.measurementType = MeasType::kElectricalEnergy;
+        acc.measured = true;
+        acc.minMeasuredValue = 0;
+        acc.maxMeasuredValue = s_erange.rangeMax;
+        acc.accuracyRanges = chip::app::DataModel::List<const AccRange>(&s_erange, 1);
+        if (EEM::SetMeasurementAccuracy(s_ep_bank, acc) != CHIP_NO_ERROR) ESP_LOGW(TAG, "energy accuracy");
     }
     STEP("started");
     ESP_LOGI(TAG, "up: battery endpoints %u, %u; bank %u; %u controller(s)", s_ep_batt[0], s_ep_batt[1], s_ep_bank, s_fabrics.load());

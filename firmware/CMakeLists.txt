@@ -5,6 +5,9 @@ set(PROJECT_VER "0.6.0")   # shown on the OTA screen and by GET /version; bump f
 # buffers). CHIP sizes its packet buffers from it and Matter needs ~1280 bytes, so set it on its own, build-wide so
 # lwIP and CHIP agree. IDF's lwIP mallocs pbufs (MEMP_MEM_MALLOC), so there's no pool that grows with it.
 idf_build_set_property(COMPILE_DEFINITIONS "PBUF_POOL_BUFSIZE=1536" APPEND)
+# What Apple Home shows as Manufacturer and Model (CHIP's defaults are TEST_VENDOR / TEST_PRODUCT).
+idf_build_set_property(COMPILE_DEFINITIONS "CHIP_DEVICE_CONFIG_DEVICE_VENDOR_NAME=\"VanDeck\"" APPEND)
+idf_build_set_property(COMPILE_DEFINITIONS "CHIP_DEVICE_CONFIG_DEVICE_PRODUCT_NAME=\"VanDeck panel\"" APPEND)
 project(vandeck)
 
 # BreezyBox's terminal (valdanylchuk/breezy_term) includes driver/usb_serial_jtag.h but only REQUIRES the legacy
