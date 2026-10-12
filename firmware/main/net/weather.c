@@ -1,5 +1,6 @@
-// Weather forecast from Open-Meteo (free, no API key) for where the van is: the Starlink dish's GPS fix when it
-// reports one, otherwise the last fix or a location entered by hand. Both are kept in g_cfg.wx_* across reboots.
+// Weather forecast from Open-Meteo (free, no API key) for where the van is: the GPS module's fix (io/gps.c), else
+// the Starlink dish's when it reports one, otherwise the last fix or a location entered by hand. Kept in g_cfg.wx_*
+// across reboots.
 // The nearest town comes from OpenStreetMap's Nominatim, looked up only after a move (its policy: an identifying
 // User-Agent and at most one request a second).
 #include "weather.h"
@@ -20,7 +21,8 @@
 static const char *TAG = "weather";
 #define EVERY_US     (30 * 60 * 1000000LL)
 #define RETRY_US     (2 * 60 * 1000000LL)
-#define SAVE_MOVE_KM 1.0f      // store a new Starlink fix once the van has moved this far (spares the flash)
+#define SAVE_MOVE_KM 1.0f      // store a new GPS/Starlink fix once the van has moved this far (spares the flash)
+#define GPS_HOLD_US  (60 * 1000000LL)   // keep using the GPS through a short loss of fix before falling back
 #define REFETCH_KM   10.0f     // and fetch again straight away once it is this far from the forecast's location
 #define BUF_CAP      (16 * 1024)
 #define PLACE_KM       2.0f                      // look the town up again after moving this far
@@ -248,13 +250,19 @@ static void task(void *arg)
     int64_t next = 0;
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(2000));
-        // Take the dish's fix whenever it has one; store it only after a real move.
+        // Take the GPS fix, else the dish's, whenever there is one; store it only after a real move (switching
+        // between the two live sources alone isn't worth a flash write).
         bool save = false;
         model_lock();
-        if (M.sl.loc_ok && (g_cfg.wx_src != WX_SRC_STARLINK ||
-                            dist_km(g_cfg.wx_lat, g_cfg.wx_lon, M.sl.lat, M.sl.lon) > SAVE_MOVE_KM)) {
-            g_cfg.wx_lat = M.sl.lat; g_cfg.wx_lon = M.sl.lon; g_cfg.wx_src = WX_SRC_STARLINK;
-            save = true;
+        bool gps = !M.gps.demo && M.gps.fix_at_us && now_us() - M.gps.fix_at_us < GPS_HOLD_US;
+        if (gps || M.sl.loc_ok) {
+            float la = gps ? (float)M.gps.lat : M.sl.lat, lo = gps ? (float)M.gps.lon : M.sl.lon;
+            bool live = g_cfg.wx_src == WX_SRC_GPS || g_cfg.wx_src == WX_SRC_STARLINK;
+            g_cfg.wx_src = gps ? WX_SRC_GPS : WX_SRC_STARLINK;
+            if (!live || dist_km(g_cfg.wx_lat, g_cfg.wx_lon, la, lo) > SAVE_MOVE_KM) {
+                g_cfg.wx_lat = la; g_cfg.wx_lon = lo;
+                save = true;
+            }
         }
         bool have = g_cfg.wx_src != WX_SRC_NONE, net = M.wifi.connected;
         float lat = g_cfg.wx_lat, lon = g_cfg.wx_lon;

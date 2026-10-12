@@ -90,6 +90,40 @@ menu "Truma Combi (LIN)"
         default 9600
 endmenu
 
+menu "GPS"
+    config VD_GPS
+        bool "GPS module (u-blox NMEA, e.g. GT-U7) on the expansion header"
+        default y
+        help
+            Position for the weather (ahead of the Starlink dish), the clock while there is no internet time, a
+            track log and the remote website. Harmless without a module: it just reports no data.
+    config VD_GPS_UART_NUM
+        int "UART port"
+        depends on VD_GPS
+        default 2
+        help
+            UART0 is the log console, UART1 the Truma LIN bus.
+    config VD_GPS_RX_GPIO
+        int "RX GPIO (from the module's TX)"
+        depends on VD_GPS
+        range 0 54
+        default 50
+        help
+            Expansion header IO50/IO49, 3.3 V logic. Power the module from a header 3.3 V pin.
+    config VD_GPS_TX_GPIO
+        int "TX GPIO (to the module's RX, -1 = listen only)"
+        depends on VD_GPS
+        range -1 54
+        default 49
+        help
+            Needed for aiding (time, position and saved ephemeris at start-up for a faster first fix). Without
+            it the panel only reads NMEA.
+    config VD_GPS_BAUD
+        int "Baud rate"
+        depends on VD_GPS
+        default 9600
+endmenu
+
 menu "KIB tank sensors"
     choice VD_TANK_MODE
         prompt "Sensor wiring"

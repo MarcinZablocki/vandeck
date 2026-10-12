@@ -187,7 +187,10 @@ void ui_weather_refresh(const vd_model_t *m)
     // Where the forecast is for
     if (g_cfg.wx_src == WX_SRC_NONE) { lv_label_set_text(l_src, "No location"); lv_label_set_text(l_coord, ""); }
     else {
-        lv_label_set_text(l_src, g_cfg.wx_src == WX_SRC_MANUAL ? "Set by hand" : m->sl.loc_ok ? "Starlink GPS" : "Last Starlink fix");
+        const char *s = g_cfg.wx_src == WX_SRC_MANUAL ? "Set by hand"
+                      : g_cfg.wx_src == WX_SRC_GPS ? (m->gps.fix && !m->gps.demo ? "GPS" : "Last GPS fix")
+                      : m->sl.loc_ok ? "Starlink GPS" : "Last Starlink fix";
+        lv_label_set_text(l_src, s);
         w_fmt(l_coord, "%.3f, %.3f", g_cfg.wx_lat, g_cfg.wx_lon);
     }
 
@@ -216,7 +219,7 @@ void ui_weather_refresh(const vd_model_t *m)
             lv_label_set_text(l_msg_sub, m->sl.reachable
                 ? "The dish isn't sharing its position. In the Starlink app, allow local network access "
                   "(Advanced > Debug data), or set a location below."
-                : "The forecast follows the Starlink dish's position once it's online. You can also set a location below.");
+                : "The forecast follows the GPS or the Starlink dish's position once there is one. You can also set a location below.");
             break;
         case WX_NO_NET: lv_label_set_text(l_msg, "Waiting for internet"); lv_label_set_text(l_msg_sub, "The forecast loads once the panel is online."); break;
         case WX_FETCHING: lv_label_set_text(l_msg, "Getting the forecast..."); lv_label_set_text(l_msg_sub, ""); break;

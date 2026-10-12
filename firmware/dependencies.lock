@@ -268,7 +268,7 @@ dependencies:
       require: private
       version: '>=5.0'
     source:
-      registry_url: https://components.espressif.com
+      registry_url: https://components.espressif.com/
       type: service
     version: 1.22.3
   lvgl/lvgl:
@@ -346,8 +346,9 @@ direct_dependencies:
 - espressif/mdns
 - espressif/wifi_remote_over_eppp
 - idf
+- joltwallet/littlefs
 - lvgl/lvgl
 - valdanylchuk/breezybox
-manifest_hash: 2c9275805ae82aeb84a1c6cc7a640ccd0f9f101fa41688f62bb9d8f673ff70ff
+manifest_hash: 7eb6b38ad6a76fe6faf0cb3c4cc01454a45fab4fc216059b9338ebb3e2bdcbf6
 target: esp32p4
 version: 3.0.0

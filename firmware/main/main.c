@@ -21,6 +21,7 @@
 #include "ble/ble_svc.h"
 #include "io/truma_lin.h"
 #include "io/tanks.h"
+#include "io/gps.h"
 #include "ui/ui.h"
 
 static void startup(void *arg)
@@ -56,6 +57,7 @@ static void startup(void *arg)
     ble_svc_init();
     truma_init();
     tanks_init();
+    gps_init();          // after shell_start: the track and saved ephemeris live on its LittleFS
     starlink_init();
     weather_init();
     update_svc_init();

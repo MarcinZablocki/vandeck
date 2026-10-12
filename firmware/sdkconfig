@@ -1332,6 +1332,21 @@ CONFIG_VD_LIN_BAUD=9600
 # end of Truma Combi (LIN)
 
 #
+# GPS
+#
+# default:
+CONFIG_VD_GPS=y
+# default:
+CONFIG_VD_GPS_UART_NUM=2
+# default:
+CONFIG_VD_GPS_RX_GPIO=50
+# default:
+CONFIG_VD_GPS_TX_GPIO=49
+# default:
+CONFIG_VD_GPS_BAUD=9600
+# end of GPS
+
+#
 # KIB tank sensors
 #
 # default:

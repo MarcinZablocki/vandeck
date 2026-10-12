@@ -7,7 +7,7 @@ ESP-IDF 6.0 + LVGL 9 firmware for the **Elecrow CrowPanel Advanced 7" ESP32-P4**
 ```bash
 cd firmware
 idf.py set-target esp32p4
-idf.py menuconfig        # VanDeck menu: LIN pins, tank wiring, demo mode
+idf.py menuconfig        # VanDeck menu: LIN pins, GPS pins, tank wiring, demo mode
 idf.py build flash monitor
 ```
 
@@ -141,6 +141,43 @@ The USB-JTAG shell isn't on that port. To clear the crash guard there, erase NVS
 `python -m esptool --chip esp32p4 -p /dev/cu.wchusbserial10 erase-region 0x9000 0x60000`. Both panels answer as
 `vandeck.local`, so use IP addresses while both are on the network.
 
+## GPS
+
+A u-blox NMEA module (developed with a GT-U7, u-blox 7) on the expansion header, ported from the GPS-A devkit sketch.
+It gives the weather its location (ahead of the Starlink dish, then a location set by hand), sets the clock while
+SNTP hasn't (no internet; automatic time on), keeps a track log, and shows on the remote website's GPS tab and in
+`/status` (`gps` and `location`). The panel's own screens only show it as the weather location ("GPS").
+
+Wiring (3.3 V logic only; the module's own 3.3 V regulator is fine on 3.3 V too):
+
+| Module | CrowPanel header |
+|---|---|
+| VCC | a spare 3.3 V pin (one of the three feeds the LIN transceiver's SLP) |
+| GND | GND |
+| TX | IO50 (`VD_GPS_RX_GPIO`) |
+| RX | IO49 (`VD_GPS_TX_GPIO`; -1 = listen only, no aiding) |
+
+`VanDeck > GPS` in menuconfig: `VD_GPS` (on by default; without a module it just reports no data), UART port
+(`VD_GPS_UART_NUM`, 2; UART0 is the console, UART1 the LIN bus), the two pins, and `VD_GPS_BAUD` (9600, the
+module's default). If the fix never comes, `gps raw` shows what arrives: nothing at all means the module's TX isn't
+on IO50 (swap the two wires or the two settings); garbage means the baud rate is wrong.
+
+With the module's RX wired the panel also helps it to a faster first fix, as GPS-A did:
+
+- at start-up, once SNTP has the time (or after 2 minutes without), UBX-AID-INI with the time and the last known
+  position (the weather location), skipped if the module already has a fix;
+- every 30 minutes with a fix, it reads the ephemeris, almanac and ionosphere data back from the module (AID-EPH,
+  AID-ALM, AID-HUI) into `/root/gps/aid.bin`, and replays them at the next start (ephemeris only while under 4 h old,
+  almanac up to 30 days).
+
+The track is one CSV per UTC day, `/root/gps/t/YYYYMMDD.csv` (`time,lat,lon,alt,sats,hdop,kmh`). It gets a point only
+after a real move: at least 10 m or 8 × HDOP, at most one every 30 s, HDOP 5 or better. When the storage partition
+has under 256 KB free, the oldest days are deleted. Read it with `ls /root/gps/t` and `cat` in the shell. Both
+files need the `storage` partition (see Shell).
+
+Internal RAM: a 5 KB task stack and the 1 KB UART buffer; the parser lives in PSRAM. `gps` prints the stack
+high-water mark, so the stack can be trimmed once it has run with a real module for a while.
+
 ## Shell
 
 On the **USB serial port** the panel runs [BreezyBox](https://components.espressif.com/components/valdanylchuk/breezybox),
@@ -164,6 +201,8 @@ The panel's own commands work there and in the Wi-Fi console (`tools/console.sh`
 | `heater` | LIN link / registration, settings, room temperature |
 | `tanks` | LPG and grey water levels |
 | `starlink` | power, reachability, dish statistics |
+| `gps [raw [s]]` | fix, satellites, HDOP, speed, GPS time; UART counters, module version, aiding, today's track; `raw` prints the NMEA as it arrives (default 3 s, up to 10) |
+| `weather [refresh\|loc <lat> <lon>]` | forecast and where it's for (GPS, Starlink or by hand) |
 | `net` | Wi-Fi network, RSSI, IP |
 | `ble` | paired devices: RSSI, last advert, reading age |
 | `relay [on\|off\|url <u>\|key <k>]` | Cloudflare relay state; switch it, or set its URL and key |
@@ -187,7 +226,7 @@ main/
   app/solar_log.*      90-day daily solar log, recorded by the panel itself
   app/sim.*            demo data for any role that isn't paired (VD_SIMULATE)
   net/wifi_svc.*       Wi-Fi through the C6 (esp_wifi_remote)
-  net/time_svc.*       SNTP, POSIX time zones, manual set
+  net/time_svc.*       SNTP, POSIX time zones, manual set, GPS time while SNTP hasn't synced
   net/starlink.*       dish status over grpc-web, auto-off
   net/ota_svc.*        OTA over Wi-Fi: HTTP upload, mDNS, rollback confirmation
   net/status_api.*     GET /status: read-only JSON of the panel's state (same key as /ota)
@@ -202,6 +241,7 @@ main/
   ble/shelly.*         Shelly Gen2 RPC over BLE (Switch.Set / GetStatus)
   io/truma_lin.*       LIN master primitives + sniff mode
   io/tanks.*           KIB probes: digital lines or ADC, read on demand
+  io/gps.*             GPS module on UART2: NMEA GGA/RMC, UBX aiding, track log on LittleFS
   ui/                  one file per screen; ui_widgets.* holds the palette and helpers
 ```
 

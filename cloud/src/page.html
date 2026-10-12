@@ -38,6 +38,7 @@
   .row { display: flex; justify-content: space-between; gap: 8px; padding: 6px 0; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; }
   .row:first-of-type { border-top: 0; }
   .row span:first-child { color: var(--txt2); }
+  .row span:last-child { white-space: nowrap; text-align: right; }
   .bar { height: 6px; border-radius: 3px; background: var(--inset); margin-top: 10px; overflow: hidden; }
   .bar i { display: block; height: 100%; background: var(--green); width: 0; transition: width .4s; }
   .ctl { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); flex-wrap: wrap; }
@@ -53,6 +54,12 @@
   #msg { min-height: 20px; font-size: 14px; margin-top: 8px; color: var(--txt2); }
   #msg.err { color: var(--red); }
   .warn { color: var(--amber); }
+  nav { display: inline-flex; background: var(--btn); border-radius: 12px; padding: 3px; gap: 2px; margin: 0 0 14px; }
+  nav button.on { background: var(--btn-on); color: var(--btn-on-txt); }
+  [hidden] { display: none !important; }
+  .coords { font-size: 26px; font-weight: 600; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  .links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .links a { color: var(--txt); background: var(--btn); border-radius: 8px; padding: 8px 12px; text-decoration: none; font-size: 14px; }
   footer { color: var(--muted); font-size: 12px; margin-top: 16px; text-align: center; }
 </style>
 </head>
@@ -60,7 +67,9 @@
 <main>
   <header><h1>VanDeck</h1><div id="conn">Loading…</div></header>
 
-  <div class="grid">
+  <nav id="tabs"><button data-tab="van" class="on">Van</button><button data-tab="gps">GPS</button></nav>
+
+  <div class="grid" id="tab-van">
     <section class="card">
       <h2>Battery bank</h2>
       <div class="big"><span id="soc">--</span><span class="unit">%</span></div>
@@ -98,6 +107,23 @@
     <section class="card">
       <h2>Tanks &amp; more</h2>
       <div id="misc"></div>
+    </section>
+  </div>
+
+  <div class="grid" id="tab-gps" hidden>
+    <section class="card wide">
+      <h2>Position</h2>
+      <div class="coords" id="pos">--</div>
+      <div class="sub" id="possub"></div>
+      <div class="links" id="maplinks"></div>
+    </section>
+    <section class="card">
+      <h2>Fix</h2>
+      <div id="fix"></div>
+    </section>
+    <section class="card">
+      <h2>Movement</h2>
+      <div id="move"></div>
     </section>
   </div>
   <footer id="foot"></footer>
@@ -168,8 +194,63 @@ function render(snap) {
     ["Starlink", sl.power ? (sl.reachable ? "online" : "starting") : "off"],
     ["Wi-Fi", s.wifi?.connected ? s.wifi.ssid || "connected" : "--"],
   ]);
+  renderGps(s);
   $("foot").textContent = `Panel ${s.version || ""}${s.demo ? " · demo data" : ""}`;
 }
+
+const COMPASS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+function secs(s) { return s < 90 ? `${s} s` : s < 5400 ? `${Math.round(s / 60)} min` : s < 172800 ? `${Math.round(s / 3600)} h` : `${Math.round(s / 86400)} days`; }
+
+// GPS tab: the module's fix, or (without one) where the panel last knew the van to be.
+function renderGps(s) {
+  const g = s.gps, loc = s.location || {};
+  const hasFix = g && g.lat != null;
+  const lat = hasFix ? g.lat : loc.lat, lon = hasFix ? g.lon : loc.lon;
+  const known = lat != null && lon != null;
+  $("pos").textContent = known ? `${lat.toFixed(5)}, ${lon.toFixed(5)}` : "Unknown";
+  const place = loc.place ? [loc.place, loc.country].filter(Boolean).join(", ") : "";
+  const SRC = { gps: "GPS", starlink: "Starlink dish", manual: "set by hand" };
+  let sub;
+  if (!g) sub = "This panel's firmware has no GPS support";
+  else if (g.fix) sub = `GPS fix${g.demo ? " (demo data)" : ""}`;
+  else if (hasFix) sub = `Last GPS fix ${secs(g.age_s)} ago`;
+  else sub = known ? `From the ${SRC[loc.src] || loc.src} (no GPS fix)` : "No GPS fix and no other location";
+  $("possub").textContent = [place, sub].filter(Boolean).join(" · ");
+  const links = known ? [
+    ["OpenStreetMap", `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=15/${lat}/${lon}`],
+    ["Google Maps", `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`],
+    ["Apple Maps", `https://maps.apple.com/?ll=${lat},${lon}&q=Van`],
+  ] : [];
+  $("maplinks").replaceChildren(...links.map(([t, href]) => {
+    const a = document.createElement("a"); a.textContent = t; a.href = href; a.target = "_blank"; a.rel = "noopener noreferrer"; return a;
+  }));
+
+  const state = !g ? "--" : g.fix ? "Fix" : g.present ? "Searching…" : "No data from the module";
+  rows($("fix"), [
+    ["Status", state, g && !g.fix ? "warn" : ""],
+    ["Satellites", g?.present ? String(g.sats) : "--"],
+    ["HDOP", g?.hdop != null ? fmt(g.hdop, 1) : "--"],
+    ["Altitude", hasFix ? `${fmt(g.alt_m)} m` : "--"],
+    ["GPS time", g?.utc ? new Date(g.utc * 1000).toISOString().replace("T", " ").slice(0, 19) + " UTC" : "--"],
+  ]);
+  const moving = g?.fix && g.kmh >= 2;
+  rows($("move"), [
+    ["Speed", !g?.fix ? "--" : moving ? `${fmt(g.kmh)} km/h` : "Stopped"],
+    ["Heading", moving ? `${fmt(g.course)}° ${COMPASS[Math.round(g.course / 45) & 7]}` : "--"],
+  ]);
+}
+
+function showTab(t) {
+  for (const b of $("tabs").querySelectorAll("button")) b.classList.toggle("on", b.dataset.tab === t);
+  $("tab-van").hidden = t !== "van";
+  $("tab-gps").hidden = t !== "gps";
+}
+$("tabs").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  showTab(b.dataset.tab);
+  history.replaceState(null, "", b.dataset.tab === "van" ? location.pathname : "#" + b.dataset.tab);
+});
+showTab(location.hash === "#gps" ? "gps" : "van");
 
 async function poll() {
   try {

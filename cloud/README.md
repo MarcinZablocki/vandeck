@@ -12,7 +12,9 @@ phone ──HTTPS──▶ vandeck (Worker, behind Cloudflare Access)
 panel ──WSS────▶ vandeck-link (Worker, panel key)
 ```
 
-- `vandeck` (`wrangler.toml`, `src/site.js`, `src/page.html`) serves the page and the API. Cloudflare Access sits in
+- `vandeck` (`wrangler.toml`, `src/site.js`, `src/page.html`) serves the page and the API. The page has two tabs:
+  **Van** (batteries, solar, heating, tanks) and **GPS** (the panel's GPS fix, or its last known location, with map
+  links; open it directly with `#gps`). It only reads what the panel sends. Cloudflare Access sits in
   front of it, and the Worker also verifies Access's signed token (`Cf-Access-Jwt-Assertion`) against your team's
   keys and the application's AUD. If Access is ever switched off, it fails closed with 403. Commands must be
   same-origin, and only `heater_on`, `setpoint_c` (5–30), `water` (`off|eco|hot`) and `fan` (`eco|high`) get through.

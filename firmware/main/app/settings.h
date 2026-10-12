@@ -26,7 +26,7 @@ typedef struct {
     uint8_t screen_timeout;    // SCREEN_TO_*
     uint8_t brightness;        // backlight %, 10..100
     // v3
-    float wx_lat, wx_lon;      // weather location: the last Starlink fix, or one entered by hand
+    float wx_lat, wx_lon;      // weather location: the last GPS or Starlink fix, or one entered by hand
     uint8_t wx_src;            // WX_SRC_*
     // v4
     uint16_t pv_w;             // solar array peak power, for the forecast's expected yield
@@ -40,7 +40,7 @@ typedef struct {
 
 enum { UPD_MODE_OFF, UPD_MODE_NOTIFY, UPD_MODE_AUTO };
 
-enum { WX_SRC_NONE, WX_SRC_STARLINK, WX_SRC_MANUAL };
+enum { WX_SRC_NONE, WX_SRC_STARLINK, WX_SRC_MANUAL, WX_SRC_GPS };   // stored: append only
 
 enum { SCREEN_TO_30S, SCREEN_TO_1M, SCREEN_TO_5M, SCREEN_TO_NEVER };
 int settings_screen_timeout_ms(void);   // 0 = never

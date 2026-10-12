@@ -8,6 +8,7 @@
 #include "net/relay_svc.h"
 #include "net/wifi_svc.h"
 #include "io/truma_lin.h"
+#include "io/gps.h"
 #include "net/update_svc.h"
 #include "esp_app_desc.h"
 #include "esp_console.h"
@@ -22,6 +23,7 @@
 #include <string.h>
 #include <strings.h>
 #include <time.h>
+#include <sys/stat.h>
 
 static vd_model_t *snap(void)
 {
@@ -141,10 +143,10 @@ static void print_relay(const vd_model_t *m)
 
 static void print_weather(const vd_model_t *m)
 {
-    static const char *SRC[] = { "none", "Starlink", "manual" };
+    static const char *SRC[] = { "none", "Starlink", "manual", "GPS" };
     static const char *ST[] = { "no location", "no network", "fetching", "ok", "fetch failed" };
     const vd_weather_t *w = &m->wx;
-    printf("weather: %s, location %s", ST[w->state], SRC[g_cfg.wx_src]);
+    printf("weather: %s, location %s", ST[w->state], SRC[g_cfg.wx_src & 3]);
     if (g_cfg.wx_src) printf(" %.4f, %.4f", g_cfg.wx_lat, g_cfg.wx_lon);
     const char *place, *country;
     if (weather_place(&place, &country)) printf(" near %s%s%s", place[0] ? place : "(no town)", country[0] ? ", " : "", country);
@@ -158,6 +160,49 @@ static void print_weather(const vd_model_t *m)
         printf("  day %d: %5.1f / %5.1f C, %-18s rain %3u %%, sun %.2f kWh/m2 -> ~%.2f kWh\n", i, d->tmin, d->tmax,
                weather_text(d->code), d->pop, d->rad_kwh_m2, weather_expected_kwh(d->rad_kwh_m2));
     }
+}
+
+static const char *compass(float deg)
+{
+    static const char *P[] = { "N", "NE", "E", "SE", "S", "SW", "W", "NW" };
+    return P[(int)lroundf(deg / 45) & 7];
+}
+
+static void print_gps(const vd_model_t *m)
+{
+    gps_info_t i;
+    gps_info(&i);
+    const vd_gps_t *g = &m->gps;
+    if (!i.enabled && !g->demo) { printf("gps: off (VanDeck > GPS in menuconfig)\n"); return; }
+    if (g->fix) {
+        printf("gps: %.6f, %.6f  alt %.0f m  %u satellites  HDOP %.1f", g->lat, g->lon, g->alt_m, g->sats, g->hdop);
+        if (g->kmh >= 2) printf("  %.0f km/h %s", g->kmh, compass(g->course));
+        if (g->demo) printf("  (demo)");
+        printf("\n");
+    } else if (g->present) printf("gps: no fix yet, %u satellites in use\n", g->sats);
+    else printf("gps: no data from the module\n");
+    if (!g->fix && g->fix_at_us) printf("  last fix %.6f, %.6f, %lds ago\n", g->lat, g->lon, age_s(g->fix_at_us));
+    if (g->utc) {
+        time_t u = (time_t)g->utc; struct tm tm; char b[24];
+        gmtime_r(&u, &tm); strftime(b, sizeof b, "%Y-%m-%d %H:%M:%S", &tm);
+        printf("  GPS time %s UTC\n", b);
+    }
+    if (!i.enabled) return;
+    printf("  UART RX GPIO %d, TX GPIO %d, %d baud: %lu bytes, %lu sentences, %lu bad checksums\n", i.rx_gpio, i.tx_gpio,
+           i.baud, (unsigned long)i.bytes, (unsigned long)i.sentences, (unsigned long)i.bad);
+    if (i.sw[0]) printf("  module: u-blox SW %s, HW %s\n", i.sw, i.hw);
+    else if (i.tx) printf("  module: no answer to UBX-MON-VER yet%s\n", i.sentences ? " (check the wire to its RX)" : "");
+    printf("  aiding at start-up: %s\n", i.aid);
+    if (i.aid_saved) printf("  saved ephemeris/almanac: %d frames, %lld min old\n", i.aid_frames, (long long)(time(NULL) - i.aid_saved) / 60);
+    if (!i.fs) printf("  no 'storage' partition: no track log or saved ephemeris\n");
+    else {
+        time_t now = time(NULL); struct tm tm; char p[48]; struct stat st;
+        gmtime_r(&now, &tm);
+        snprintf(p, sizeof p, GPS_TRACK_DIR "/%04d%02d%02d.csv", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday);
+        if (stat(p, &st) == 0) printf("  track today: %s, %ld bytes\n", p, (long)st.st_size);
+        else printf("  track today: none yet (" GPS_TRACK_DIR "/YYYYMMDD.csv, UTC days)\n");
+    }
+    printf("  task stack free: %lu bytes\n", (unsigned long)i.stack_free);
 }
 
 static void print_update(const vd_model_t *m)
@@ -188,7 +233,7 @@ static int run(printer_t p)
 
 static void print_all(const vd_model_t *m)
 {
-    print_batt(m); print_solar(m); print_heater(m); print_tanks(m); print_starlink(m); print_weather(m); print_wifi(m); print_matter(m); print_relay(m);
+    print_batt(m); print_solar(m); print_heater(m); print_tanks(m); print_starlink(m); print_gps(m); print_weather(m); print_wifi(m); print_matter(m); print_relay(m);
 }
 
 static int c_status(int c, char **v) { return run(print_all); }
@@ -197,6 +242,21 @@ static int c_solar(int c, char **v) { return run(print_solar); }
 static int c_heater(int c, char **v) { return run(print_heater); }
 static int c_tanks(int c, char **v) { return run(print_tanks); }
 static int c_starlink(int c, char **v) { return run(print_starlink); }
+static int c_gps(int argc, char **argv)
+{
+    if (argc > 1 && !strcmp(argv[1], "raw")) {
+        int s = argc > 2 ? atoi(argv[2]) : 3;
+        s = s < 1 ? 1 : s > 10 ? 10 : s;
+        char *b = heap_caps_malloc(4096, MALLOC_CAP_SPIRAM);
+        if (!b) return 1;
+        size_t n = gps_raw(b, 4096, s * 1000);
+        if (n) fwrite(b, 1, n, stdout); else printf("nothing received in %d s\n", s);
+        free(b);
+        return 0;
+    }
+    if (argc > 1) { printf("usage: gps [raw [seconds]]\n"); return 1; }
+    return run(print_gps);
+}
 static int c_wifi(int argc, char **argv)
 {
     if (argc > 2 && !strcmp(argv[1], "forget")) {
@@ -232,7 +292,7 @@ static int c_weather(int argc, char **argv)
         if (!strcmp(argv[1], "refresh")) { weather_refresh(); printf("fetching\n"); }
         else if (!strcmp(argv[1], "loc") && argc > 3) {
             if (!weather_set_location(strtof(argv[2], NULL), strtof(argv[3], NULL))) { printf("latitude -90..90, longitude -180..180\n"); return 1; }
-            printf("location set (Starlink's position replaces it once the dish reports one)\n");
+            printf("location set (a GPS fix or the Starlink dish's position replaces it)\n");
         } else { printf("usage: weather [refresh|loc <lat> <lon>]\n"); return 1; }
     }
     return run(print_weather);
@@ -331,12 +391,13 @@ static int c_grep(int argc, char **argv)
 static const esp_console_cmd_t CMDS[] = {
     { .command = "grep",     .help = "Print lines containing a pattern (-i ignore case, -v invert); reads a file or a pipe", .hint = "[-i] [-v] <pattern> [file]", .func = c_grep },
     { .command = "screen",   .help = "Screen saver: show state, set timeout (30s|1m|5m|never) or 'wake'", .hint = "[30s|1m|5m|never|wake]", .func = c_screen },
-    { .command = "status",   .help = "Everything the panel knows: batteries, solar, heater, tanks, Starlink, Wi-Fi, Matter, relay", .func = c_status },
+    { .command = "status",   .help = "Everything the panel knows: batteries, solar, heater, tanks, Starlink, GPS, weather, Wi-Fi, Matter, relay", .func = c_status },
     { .command = "batt",     .help = "Battery readings (voltage, current, SOC, capacity, temperature)", .func = c_batt },
     { .command = "solar",    .help = "Solar charger: PV power, charge stage, battery side, yield", .func = c_solar },
     { .command = "heater",   .help = "Truma heater: LIN link, settings, room temperature", .func = c_heater },
     { .command = "tanks",    .help = "Tank levels (LPG, grey water)", .func = c_tanks },
     { .command = "starlink", .help = "Starlink power and dish statistics", .func = c_starlink },
+    { .command = "gps",      .help = "GPS fix, module link and aiding; 'raw [s]' shows the NMEA as it arrives (up to 10 s)", .hint = "[raw [seconds]]", .func = c_gps },
     { .command = "update",   .help = "Firmware updates from GitHub releases: show state; check, install, or set off|notify|auto", .hint = "[check|install|off|notify|auto]", .func = c_update },
     { .command = "weather",  .help = "Forecast and its location; 'loc <lat> <lon>' sets one by hand, 'refresh' fetches now", .hint = "[refresh|loc <lat> <lon>]", .func = c_weather },
     { .command = "net",      .help = "Wi-Fi in use and the remembered networks; 'forget <ssid>' drops one", .hint = "[forget <ssid>]", .func = c_wifi },
