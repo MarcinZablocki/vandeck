@@ -58,6 +58,8 @@
   nav button.on { background: var(--btn-on); color: var(--btn-on-txt); }
   [hidden] { display: none !important; }
   .coords { font-size: 26px; font-weight: 600; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  .map { width: 100%; height: 340px; border: 0; border-radius: 12px; margin-top: 12px; background: var(--inset); display: block; }
+  @media (max-width: 480px) { .map { height: 260px; } }
   .links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
   .links a { color: var(--txt); background: var(--btn); border-radius: 8px; padding: 8px 12px; text-decoration: none; font-size: 14px; }
   footer { color: var(--muted); font-size: 12px; margin-top: 16px; text-align: center; }
@@ -115,6 +117,8 @@
       <h2>Position</h2>
       <div class="coords" id="pos">--</div>
       <div class="sub" id="possub"></div>
+      <!-- OSM refuses requests without a referrer; this sends the site's origin only (the rest of the site stays no-referrer) -->
+      <iframe class="map" id="map" title="Map" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" hidden></iframe>
       <div class="links" id="maplinks"></div>
     </section>
     <section class="card">
@@ -221,6 +225,7 @@ function renderGps(s) {
     ["Google Maps", `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`],
     ["Apple Maps", `https://maps.apple.com/?ll=${lat},${lon}&q=Van`],
   ] : [];
+  setMap(known ? lat : null, lon);
   $("maplinks").replaceChildren(...links.map(([t, href]) => {
     const a = document.createElement("a"); a.textContent = t; a.href = href; a.target = "_blank"; a.rel = "noopener noreferrer"; return a;
   }));
@@ -240,10 +245,25 @@ function renderGps(s) {
   ]);
 }
 
+// OpenStreetMap's embed page with a marker. Reloaded only after a move of ~50 m, not on every poll; a frame
+// loaded while the tab was hidden gets the current spot when the tab opens.
+let mapAt = null;
+function setMap(lat, lon) {
+  const m = $("map");
+  m.hidden = lat === null;
+  if (lat === null || $("tab-gps").hidden) return;
+  if (mapAt && Math.abs(mapAt[0] - lat) < 0.0005 && Math.abs(mapAt[1] - lon) < 0.0005) return;
+  mapAt = [lat, lon];
+  const dLat = 0.006, dLon = dLat / Math.max(0.2, Math.cos(lat * Math.PI / 180)) * 1.6;
+  const bbox = [lon - dLon, lat - dLat, lon + dLon, lat + dLat].map((v) => v.toFixed(5)).join(",");
+  m.src = `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${lat.toFixed(6)},${lon.toFixed(6)}`;
+}
+
 function showTab(t) {
   for (const b of $("tabs").querySelectorAll("button")) b.classList.toggle("on", b.dataset.tab === t);
   $("tab-van").hidden = t !== "van";
   $("tab-gps").hidden = t !== "gps";
+  if (t === "gps" && st) renderGps(st);
 }
 $("tabs").addEventListener("click", (e) => {
   const b = e.target.closest("button"); if (!b) return;
