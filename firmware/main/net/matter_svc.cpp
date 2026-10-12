@@ -1,10 +1,15 @@
 // Matter node (esp-matter): the batteries for Apple Home. See matter_svc.h for what is exposed.
 //
-// Endpoints (ids are assigned in creation order, after the root node on 0):
-//   Battery 1, Battery 2  temperature sensors: each battery's temperature
-//   Battery bank          metered plug (its switch is a stand-in, always on): power drawn from the bank, its
-//                         voltage and current, and the energy drawn (kWh) for the Home app's Energy view; and the
-//                         Power Source (bank charge, charging state, low battery) Home shows in every tile's settings
+// Endpoints, in creation order after the root node (0); Home names them generically, so rename them once:
+//   1      Battery bank: metered plug (its switch is a stand-in, always on) with the power drawn from the bank,
+//          its voltage and current, and the energy drawn (kWh); and the Power Source (bank charge, charging state,
+//          low battery) Home shows in every tile's settings
+//   2, 3   Battery 1, 2: dimmable lights, brightness = charge   } stand-ins: Home has no plain number tile
+//   4, 5   Bank W, PV W: light sensors, lux = watts             } (see add_level)
+//   6      Heater: Truma thermostat (Off / Heat, setpoint, room temperature)
+//   7      Room temperature (the CP Plus's sensor) as its own tile
+//   8      Hot water: thermostat, Off / Heat, 40 C = Eco, 60 C = Hot
+//   9      Fan: Low = Eco, High = High
 //
 // Pairing is on-network only. The panel is already on Wi-Fi, so Matter doesn't need BLE, and leaving CHIPoBLE off
 // keeps NimBLE for VanDeck's own scanning. The setup passcode and discriminator are random per panel (vd_mt in NVS);
@@ -26,6 +31,9 @@
 #include <app/clusters/electrical-power-measurement-server/ElectricalPowerMeasurementDelegate.h>
 #include <app/clusters/electrical-energy-measurement-server/CodegenIntegration.h>
 #include <app/clusters/temperature-measurement-server/TemperatureMeasurementCluster.h>
+#include <app/clusters/illuminance-measurement-server/IlluminanceMeasurementCluster.h>
+#include <app/clusters/fan-control-server/FanControlCluster.h>
+#include <app/clusters/fan-control-server/CodegenIntegration.h>
 #include <esp_matter_data_model_provider.h>
 #include "esp_timer.h"
 #include <crypto/CHIPCryptoPAL.h>
@@ -36,6 +44,8 @@
 
 extern "C" {
 #include "app/model.h"
+#include "app/settings.h"
+#include "io/truma_lin.h"
 }
 
 using namespace esp_matter;
@@ -188,22 +198,158 @@ private:
 };
 
 static BankPower s_bank;
-static uint16_t s_ep_batt[2], s_ep_bank;
+static uint16_t s_ep_bank, s_ep_level[2], s_ep_watts, s_ep_pv, s_ep_heat, s_ep_room, s_ep_water, s_ep_fan;
 
 // --- Data model
 
-static esp_err_t on_attr(attribute::callback_type_t, uint16_t, uint32_t, uint32_t, esp_matter_attr_val_t *, void *) { return ESP_OK; }
+// Writes from controllers. The panel's own updates use attribute::report(), which skips this callback, so only a
+// change made in Home (or another controller) reaches the heater. The stand-ins (bank plug, battery lights) are
+// left alone here and put back by the next update; the fan has its own delegate (TrumaFan).
+static esp_err_t on_attr(attribute::callback_type_t type, uint16_t ep, uint32_t cl, uint32_t at, esp_matter_attr_val_t *v, void *)
+{
+    if (type != attribute::POST_UPDATE || !ep) return ESP_OK;
+    if (cl != Thermostat::Id) return ESP_OK;
+    bool mode = at == Thermostat::Attributes::SystemMode::Id, sp = at == Thermostat::Attributes::OccupiedHeatingSetpoint::Id;
+    bool heat = mode && v->val.u8 == (uint8_t)Thermostat::SystemModeEnum::kHeat;
+    if (ep == s_ep_heat) {
+        if (mode) truma_set_power(heat);
+        else if (sp) truma_set_setpoint(v->val.i16 / 100.0f);
+    } else if (ep == s_ep_water) {
+        // Boiler on comes back at the temperature last chosen; a new temperature while it's off only selects it.
+        static uint8_t s_last = WATER_ECO;
+        if (g_cfg.water != WATER_OFF) s_last = g_cfg.water;
+        if (mode) truma_set_water(heat ? s_last : WATER_OFF);
+        else if (sp) {
+            s_last = v->val.i16 >= 5000 ? WATER_HOT : WATER_ECO;
+            if (g_cfg.water != WATER_OFF) truma_set_water(s_last);
+        }
+    }
+    return ESP_OK;
+}
 static esp_err_t on_identify(identification::callback_type_t, uint16_t, uint8_t, uint8_t, void *) { return ESP_OK; }
 
-static uint16_t add_battery(node_t *node, int i)
+static uint16_t add_room(node_t *node)
 {
     endpoint::temperature_sensor::config_t tc;
     tc.temperature_measurement.measured_value = nullable<int16_t>();
     tc.temperature_measurement.min_measured_value = nullable<int16_t>(-4000);
     tc.temperature_measurement.max_measured_value = nullable<int16_t>(8000);
-    endpoint_t *ep = endpoint::temperature_sensor::create(node, &tc, ENDPOINT_FLAG_NONE, nullptr);
-
+    return endpoint::get_id(endpoint::temperature_sensor::create(node, &tc, ENDPOINT_FLAG_NONE, nullptr));
+}
+// Apple Home has no tile for a number with a unit of our choosing, so two stand-ins put values on tiles:
+// - a dimmable light per battery whose brightness is its charge ("Battery 1, 78 %"). It is on while the battery
+//   reports. Switching or dimming it from Home is undone at the next update (10 s), but it does count as a light:
+//   "turn off all the lights" and scenes include it.
+// - a light sensor whose lux is the power drawn from the bank in watts ("320 lx"), read-only.
+static uint16_t add_level(node_t *node)
+{
+    endpoint::dimmable_light::config_t lc;
+    lc.on_off.on_off = false;
+    lc.level_control.current_level = nullable<uint8_t>(1);
+    endpoint_t *ep = endpoint::dimmable_light::create(node, &lc, ENDPOINT_FLAG_NONE, nullptr);
     return endpoint::get_id(ep);
+}
+
+static uint16_t add_watts(node_t *node)
+{
+    endpoint::light_sensor::config_t sc;
+    sc.illuminance_measurement.measured_value = nullable<uint16_t>();
+    sc.illuminance_measurement.min_measured_value = nullable<uint16_t>(1);
+    sc.illuminance_measurement.max_measured_value = nullable<uint16_t>(0xFFFE);
+    endpoint_t *ep = endpoint::light_sensor::create(node, &sc, ENDPOINT_FLAG_NONE, nullptr);
+    return endpoint::get_id(ep);
+}
+
+// Truma: heating and the boiler as thermostats (Off / Heat). Heating: setpoint 5..30 C, the CP Plus's range. Boiler:
+// setpoint 40 C = Eco, 60 C = Hot, the Truma's water temperatures; anything else goes to the nearer one. Apple Home
+// doesn't show Matter's Water Heater device type.
+static uint16_t add_thermostat(node_t *node, float setpoint_c, int16_t min_c100, int16_t max_c100)
+{
+    endpoint::thermostat::config_t tc;
+    tc.thermostat.control_sequence_of_operation = (uint8_t)Thermostat::ControlSequenceOfOperationEnum::kHeatingOnly;
+    tc.thermostat.system_mode = (uint8_t)Thermostat::SystemModeEnum::kOff;
+    tc.thermostat.local_temperature = nullable<int16_t>();
+    tc.thermostat.feature_flags = cluster::thermostat::feature::heating::get_id();
+    tc.thermostat.features.heating.occupied_heating_setpoint = (int16_t)lroundf(setpoint_c * 100);
+    endpoint_t *ep = endpoint::thermostat::create(node, &tc, ENDPOINT_FLAG_NONE, nullptr);
+    cluster_t *c = cluster::get(ep, Thermostat::Id);
+    // The heating feature brings the limit attributes at CHIP's 7..30 C; set_limits() moves them once started.
+    namespace TA = Thermostat::Attributes;
+    for (uint32_t id : { TA::AbsMinHeatSetpointLimit::Id, TA::AbsMaxHeatSetpointLimit::Id, TA::MinHeatSetpointLimit::Id, TA::MaxHeatSetpointLimit::Id })
+        if (!attribute::get(c, id)) {
+            int16_t v = id == TA::AbsMinHeatSetpointLimit::Id || id == TA::MinHeatSetpointLimit::Id ? min_c100 : max_c100;
+            if (id == TA::AbsMinHeatSetpointLimit::Id) cluster::thermostat::attribute::create_abs_min_heat_setpoint_limit(c, v);
+            else if (id == TA::AbsMaxHeatSetpointLimit::Id) cluster::thermostat::attribute::create_abs_max_heat_setpoint_limit(c, v);
+            else if (id == TA::MinHeatSetpointLimit::Id) cluster::thermostat::attribute::create_min_heat_setpoint_limit(c, v);
+            else cluster::thermostat::attribute::create_max_heat_setpoint_limit(c, v);
+        }
+    cluster::thermostat::attribute::create_thermostat_running_state(c, 0);
+    return endpoint::get_id(ep);
+}
+
+static void set(uint16_t ep, uint32_t cl, uint32_t at, esp_matter_attr_val_t v);
+
+// Absolute limits first: the min/max ones are checked against them. The order of min and max depends on which way
+// the range moves (the boiler's 40..60 lies above the default 30).
+static void set_limits(uint16_t ep, int16_t min_c100, int16_t max_c100)
+{
+    namespace TA = Thermostat::Attributes;
+    auto dump = [&](const char *when) {
+        int16_t v[5] = {};
+        uint32_t ids[5] = { TA::AbsMinHeatSetpointLimit::Id, TA::AbsMaxHeatSetpointLimit::Id, TA::MinHeatSetpointLimit::Id, TA::MaxHeatSetpointLimit::Id, TA::OccupiedHeatingSetpoint::Id };
+        for (int i = 0; i < 5; i++) { esp_matter_attr_val_t x = {}; attribute::get_val(attribute::get(ep, Thermostat::Id, ids[i]), &x); v[i] = x.val.i16; }
+        ESP_LOGD(TAG, "ep %u %s: abs %d..%d, limits %d..%d, setpoint %d", ep, when, v[0], v[1], v[2], v[3], v[4]);
+    };
+    dump("before");
+    set(ep, Thermostat::Id, TA::AbsMaxHeatSetpointLimit::Id, esp_matter_int16(max_c100));
+    set(ep, Thermostat::Id, TA::AbsMinHeatSetpointLimit::Id, esp_matter_int16(min_c100));
+    set(ep, Thermostat::Id, TA::MaxHeatSetpointLimit::Id, esp_matter_int16(max_c100));
+    set(ep, Thermostat::Id, TA::MinHeatSetpointLimit::Id, esp_matter_int16(min_c100));
+    dump("after");
+}
+
+// Fan: the Truma's fan setting. Low = Eco, High = High; "Vent" (fan only) is left out, the iNet box can't select it.
+// Fan Control is code-driven: Home's changes arrive through this delegate, the panel's go in through the cluster.
+namespace FC = FanControl;
+
+class TrumaFan : public FC::Delegate {
+public:
+    TrumaFan() : FC::Delegate(chip::kInvalidEndpointId) {}
+    chip::Protocols::InteractionModel::Status HandleStep(FC::StepDirectionEnum, bool, bool) override
+    {
+        return chip::Protocols::InteractionModel::Status::UnsupportedCommand;
+    }
+    void OnFanDriveStateChanged(const FC::FanDriveState &st) override
+    {
+        if (st.mode == FC::FanModeEnum::kOff) return;   // no off: the next update puts it back
+        bool high = !st.percentSetting.IsNull() ? st.percentSetting.Value() > 50
+                                                : st.mode == FC::FanModeEnum::kHigh || st.mode == FC::FanModeEnum::kOn;
+        uint8_t want = high ? FAN_HIGH : FAN_ECO;
+        if (g_cfg.fan != want) truma_set_fan(want);
+    }
+};
+
+static TrumaFan s_fan;
+
+static uint16_t add_fan(node_t *node)
+{
+    endpoint::fan::config_t fc;
+    fc.fan_control.fan_mode = (uint8_t)FC::FanModeEnum::kLow;
+    fc.fan_control.fan_mode_sequence = (uint8_t)FC::FanModeSequenceEnum::kOffLowHigh;
+    fc.fan_control.percent_setting = nullable<uint8_t>(50);
+    fc.fan_control.percent_current = 50;
+    return endpoint::get_id(endpoint::fan::create(node, &fc, ENDPOINT_FLAG_NONE, nullptr));
+}
+
+static void set_fan(bool high)
+{
+    lock::ScopedChipStackLock lock(portMAX_DELAY);
+    chip::app::ServerClusterInterface *c =
+        data_model::provider::get_instance().registry().Get(chip::app::ConcreteClusterPath(s_ep_fan, FC::Id));
+    if (!c) return;
+    auto *f = static_cast<FanControlCluster *>(c);
+    FC::FanModeEnum m = high ? FC::FanModeEnum::kHigh : FC::FanModeEnum::kLow;
+    if (f->GetFanMode() != m) f->SetFanMode(m);
 }
 
 // Apple Home shows one battery per accessory (every tile's settings show the same one), so the Power Source is the
@@ -273,11 +419,50 @@ static void set_temperature(uint16_t ep, chip::app::DataModel::Nullable<int16_t>
         ESP_LOGW(TAG, "temperature on endpoint %u not set", ep);
 }
 
-static void push_battery(int i, const vd_batt_t *b)
+// Illuminance is code-driven too (see set_temperature). Encoded as 10000 * log10(lux) + 1; 0 means "too dark to
+// measure", which Home shows as 0 lx.
+static void set_illuminance(uint16_t ep, float lux, bool valid)
+{
+    chip::app::DataModel::Nullable<uint16_t> v;
+    if (valid) v.SetNonNull(lux < 1 ? 0 : (uint16_t)fminf(10000.0f * log10f(lux) + 1, 0xFFFE));
+    lock::ScopedChipStackLock lock(portMAX_DELAY);
+    chip::app::ServerClusterInterface *c =
+        data_model::provider::get_instance().registry().Get(chip::app::ConcreteClusterPath(ep, IlluminanceMeasurement::Id));
+    if (!c || static_cast<IlluminanceMeasurementCluster *>(c)->SetMeasuredValue(v) != CHIP_NO_ERROR)
+        ESP_LOGW(TAG, "illuminance on endpoint %u not set", ep);
+}
+
+static void push_level(int i, const vd_batt_t *b)
 {
     bool ok = b->valid && !b->stale;
-    set_temperature(s_ep_batt[i], ok && !isnan(b->temp_c) ? chip::app::DataModel::Nullable<int16_t>((int16_t)lroundf(b->temp_c * 100))
-                                                          : chip::app::DataModel::Nullable<int16_t>());
+    set(s_ep_level[i], OnOff::Id, OnOff::Attributes::OnOff::Id, esp_matter_bool(ok));
+    if (ok) {   // level 1..254 for 0..100 %
+        uint8_t lvl = (uint8_t)fmaxf(1, lroundf(fminf(fmaxf(b->soc, 0), 100) * 254 / 100));
+        set(s_ep_level[i], LevelControl::Id, LevelControl::Attributes::CurrentLevel::Id, esp_matter_nullable_uint8(nullable<uint8_t>(lvl)));
+    }
+}
+
+// Report, not update: the panel's own values mustn't come back through on_attr as commands.
+static void report(uint16_t ep, uint32_t cl, uint32_t at, esp_matter_attr_val_t v) { attribute::report(ep, cl, at, &v); }
+
+static void push_truma(const vd_model_t *m)
+{
+    const vd_heater_t *h = &m->heater;
+    namespace TA = Thermostat::Attributes;
+    report(s_ep_heat, Thermostat::Id, TA::LocalTemperature::Id,
+           esp_matter_nullable_int16(h->registered && !isnan(h->room_c) ? nullable<int16_t>((int16_t)lroundf(h->room_c * 100)) : nullable<int16_t>()));
+    report(s_ep_heat, Thermostat::Id, TA::SystemMode::Id,
+           esp_matter_enum8((uint8_t)(g_cfg.heater_on ? Thermostat::SystemModeEnum::kHeat : Thermostat::SystemModeEnum::kOff)));
+    report(s_ep_heat, Thermostat::Id, TA::OccupiedHeatingSetpoint::Id, esp_matter_int16((int16_t)lroundf(g_cfg.setpoint_c * 100)));
+    report(s_ep_heat, Thermostat::Id, TA::ThermostatRunningState::Id, esp_matter_bitmap16(h->heating ? 1 : 0));   // bit 0: heat
+    set_temperature(s_ep_room, h->registered && !isnan(h->room_c) ? chip::app::DataModel::Nullable<int16_t>((int16_t)lroundf(h->room_c * 100))
+                                                              : chip::app::DataModel::Nullable<int16_t>());
+    set_fan(g_cfg.fan == FAN_HIGH);
+    // Boiler: while off, the setpoint keeps the last temperature chosen.
+    if (g_cfg.water != WATER_OFF)
+        report(s_ep_water, Thermostat::Id, TA::OccupiedHeatingSetpoint::Id, esp_matter_int16(g_cfg.water == WATER_HOT ? 6000 : 4000));
+    report(s_ep_water, Thermostat::Id, TA::SystemMode::Id,
+           esp_matter_enum8((uint8_t)(g_cfg.water != WATER_OFF ? Thermostat::SystemModeEnum::kHeat : Thermostat::SystemModeEnum::kOff)));
 }
 
 static void push_bank_source(const vd_model_t *m)
@@ -341,6 +526,7 @@ static void push_bank(const vd_model_t *m)
         n++; w += b->volts * b->amps; v += b->volts; a += b->amps;
     }
     float out_w = n && w < 0 ? -w : 0, out_a = n && a < 0 ? -a : 0;
+    set_illuminance(s_ep_watts, out_w, n > 0);
 
     int64_t now = esp_timer_get_time();
     if (s_energy_at_us && n) s_energy_mwh += (int64_t)llroundf(out_w * (float)(now - s_energy_at_us) / 3.6e6f);   // W * us -> mWh
@@ -377,15 +563,16 @@ static void update_task(void *)
     for (int n = 0;; n++) {
         if (n == 6) guard_set(0);   // a minute up: this start is good
         if (n % 6 == 0) {   // once a minute, at debug level (log matter debug): what controllers are being served
-            esp_matter_attr_val_t t1 = {}, p1 = {};
-            attribute::get_val(attribute::get(s_ep_batt[0], TemperatureMeasurement::Id, TemperatureMeasurement::Attributes::MeasuredValue::Id), &t1);
-            attribute::get_val(attribute::get(s_ep_batt[0], PowerSource::Id, PowerSource::Attributes::BatPercentRemaining::Id), &p1);
-            ESP_LOGD(TAG, "served: battery 1 %d (0.01 C), %u (half %%); bank %lld mW, %lld mWh",
-                     t1.val.i16, p1.val.u8, s_bank.power.IsNull() ? -1LL : (long long)s_bank.power.Value(), (long long)s_energy_mwh);
+            esp_matter_attr_val_t p1 = {};
+            attribute::get_val(attribute::get(s_ep_bank, PowerSource::Id, PowerSource::Attributes::BatPercentRemaining::Id), &p1);
+            ESP_LOGD(TAG, "served: bank %u (half %%), %lld mW, %lld mWh",
+                     p1.val.u8, s_bank.power.IsNull() ? -1LL : (long long)s_bank.power.Value(), (long long)s_energy_mwh);
         }
         model_snapshot(&m);
-        for (int i = 0; i < 2; i++) push_battery(i, &m.batt[i]);
+        for (int i = 0; i < 2; i++) push_level(i, &m.batt[i]);
         push_bank_source(&m);
+        push_truma(&m);
+        set_illuminance(s_ep_pv, m.solar.pv_w, m.solar.valid);
         push_bank(&m);
         vTaskDelay(pdMS_TO_TICKS(10000));
     }
@@ -435,8 +622,15 @@ static void start_task(void *)
     node::config_t nc;
     node_t *node = node::create(&nc, on_attr, on_identify);
     if (!node) { s_state = MT_ERROR; vTaskDelete(NULL); }
-    for (int i = 0; i < 2; i++) s_ep_batt[i] = add_battery(node, i);
+    // The order fixes the endpoint numbers Home has paired with: append, don't reorder.
     s_ep_bank = add_bank(node);
+    for (int i = 0; i < 2; i++) s_ep_level[i] = add_level(node);
+    s_ep_watts = add_watts(node);
+    s_ep_pv = add_watts(node);
+    s_ep_heat = add_thermostat(node, g_cfg.setpoint_c, 500, 3000);
+    s_ep_room = add_room(node);
+    s_ep_water = add_thermostat(node, g_cfg.water == WATER_HOT ? 60 : 40, 4000, 6000);
+    s_ep_fan = add_fan(node);
 
     STEP("stack");
     if (esp_matter::start(on_event) != ESP_OK) { ESP_LOGE(TAG, "start failed"); s_state = MT_ERROR; vTaskDelete(NULL); }
@@ -450,6 +644,7 @@ static void start_task(void *)
         if (GetQRCode(qr, rf) == CHIP_NO_ERROR) s_qr[qr.size()] = 0;
         if (GetManualPairingCode(mc, rf) == CHIP_NO_ERROR) s_manual[mc.size()] = 0;
         count_fabrics();
+        FanControl::SetDefaultDelegate(s_ep_fan, &s_fan);
         // The energy cluster starts with an empty accuracy record; give it a real one.
         static AccRange s_erange;
         s_erange.rangeMin = 0;
@@ -463,8 +658,10 @@ static void start_task(void *)
         acc.accuracyRanges = chip::app::DataModel::List<const AccRange>(&s_erange, 1);
         if (EEM::SetMeasurementAccuracy(s_ep_bank, acc) != CHIP_NO_ERROR) ESP_LOGW(TAG, "energy accuracy");
     }
+    set_limits(s_ep_heat, 500, 3000);
+    set_limits(s_ep_water, 4000, 6000);
     STEP("started");
-    ESP_LOGI(TAG, "up: battery endpoints %u, %u; bank %u; %u controller(s)", s_ep_batt[0], s_ep_batt[1], s_ep_bank, s_fabrics.load());
+    ESP_LOGI(TAG, "up: %u endpoints; %u controller(s)", s_ep_fan, s_fabrics.load());
     xTaskCreate(update_task, "matter_upd", 4096, nullptr, 3, nullptr);
     vTaskDelete(NULL);
 }
