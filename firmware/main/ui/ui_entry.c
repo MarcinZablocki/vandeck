@@ -1,10 +1,9 @@
-// Full-screen text entry: Wi-Fi password, Victron BLE password (step 1), Victron encryption key (step 2), Tailscale auth key,
+// Full-screen text entry: Wi-Fi password, Victron BLE password (step 1), Victron encryption key (step 2),
 // weather location.
 #include "ui_views.h"
 #include "ui_widgets.h"
 #include "ui.h"
 #include "net/wifi_svc.h"
-#include "net/tailnet_svc.h"
 #include "ble/ble_svc.h"
 #include "net/weather.h"
 #include "app/settings.h"
@@ -13,7 +12,7 @@
 #include <string.h>
 #include <stdio.h>
 
-typedef enum { M_WIFI, M_VPIN, M_VKEY, M_TSKEY, M_LOC } mode_t_;
+typedef enum { M_WIFI, M_VPIN, M_VKEY, M_LOC } mode_t_;
 static lv_obj_t *s_root, *l_title, *l_step, *b_ok, *ta, *b_show, *l_count, *l_hint, *kb;
 static mode_t_ s_mode;
 static char s_ssid[33], s_pin[33];
@@ -48,7 +47,6 @@ static bool valid(void)
 {
     size_t n = strlen(lv_textarea_get_text(ta));
     if (s_mode == M_LOC) { float a, b; return parse_loc(lv_textarea_get_text(ta), &a, &b); }
-    if (s_mode == M_TSKEY) return n >= 20 && !strncmp(lv_textarea_get_text(ta), "tskey-", 6);
     return s_mode == M_WIFI ? n >= 8 : s_mode == M_VPIN ? n >= 1 : n == 32;
 }
 
@@ -59,7 +57,6 @@ static void update(void)
     w_btn_state(b_ok, true, ok);
     if (s_mode == M_VKEY) w_fmt(l_count, "%u/32", (unsigned)strlen(t)); else lv_label_set_text(l_count, "");
     if (s_mode == M_WIFI) { lv_label_set_text(l_hint, ok ? "Ready to connect" : "At least 8 characters"); w_color(l_hint, ok ? C_GREEN : C_MUTED); }
-    if (s_mode == M_TSKEY) { lv_label_set_text(l_hint, ok ? "Ready to save" : "Starts with tskey-"); w_color(l_hint, ok ? C_GREEN : C_MUTED); }
     if (s_mode == M_LOC) {
         lv_label_set_text(l_hint, ok ? "Ready to save. Starlink's position replaces it once the dish shares one"
                                      : "Latitude, longitude in decimal degrees. South and west are negative");
@@ -79,13 +76,12 @@ static void open(mode_t_ m, const char *title, const char *step, const char *hin
     lv_textarea_set_text(ta, "");
     bool keypad = m == M_VKEY || m == M_LOC;
     lv_textarea_set_password_mode(ta, !keypad);
-    lv_textarea_set_max_length(ta, m == M_TSKEY ? 127 : m == M_WIFI ? 63 : 32);
+    lv_textarea_set_max_length(ta, m == M_WIFI ? 63 : 32);
     lv_textarea_set_accepted_chars(ta, m == M_VKEY ? "0123456789ABCDEFabcdef" : m == M_LOC ? "0123456789.,- " : NULL);
-    lv_textarea_set_placeholder_text(ta, m == M_VKEY ? "32 hex characters" : m == M_TSKEY ? "tskey-auth-..."
-                                         : m == M_LOC ? "52.2297, 21.0122" : "Password");
+    lv_textarea_set_placeholder_text(ta, m == M_VKEY ? "32 hex characters" : m == M_LOC ? "52.2297, 21.0122" : "Password");
     w_show(b_show, !keypad);
     w_btn_text(b_show, "Show");
-    w_btn_text(b_ok, m == M_WIFI ? "Connect" : m == M_VPIN ? "Next" : m == M_TSKEY || m == M_LOC ? "Save" : "Pair");
+    w_btn_text(b_ok, m == M_WIFI ? "Connect" : m == M_VPIN ? "Next" : m == M_LOC ? "Save" : "Pair");
     lv_keyboard_set_mode(kb, m == M_VKEY ? LV_KEYBOARD_MODE_USER_1 : m == M_LOC ? LV_KEYBOARD_MODE_USER_2 : LV_KEYBOARD_MODE_TEXT_LOWER);
     lv_obj_set_width(kb, keypad ? 760 : LV_PCT(100));
     lv_obj_set_height(kb, keypad ? 220 : 300);
@@ -97,11 +93,6 @@ void ui_entry_open_wifi(const char *ssid)
 {
     strlcpy(s_ssid, ssid, sizeof s_ssid);
     open(M_WIFI, ssid, "Wi-Fi password", "At least 8 characters");
-}
-
-void ui_entry_open_tailnet_key(void)
-{
-    open(M_TSKEY, "Tailscale auth key", "Tailnet", "From the Tailscale admin console: Settings > Keys. A reusable key lets the panel re-register on its own");
 }
 
 void ui_entry_open_location(void)
@@ -126,10 +117,6 @@ static void confirm(void)
     if (!valid()) return;
     const char *t = lv_textarea_get_text(ta);
     if (s_mode == M_WIFI) { wifi_svc_connect(s_ssid, t); close_entry(); }
-    else if (s_mode == M_TSKEY) {
-        if (tailnet_svc_set_auth_key(t) == ESP_OK) tailnet_svc_set_enabled(true);
-        close_entry();
-    }
     else if (s_mode == M_LOC) {
         float la, lo;
         parse_loc(t, &la, &lo);

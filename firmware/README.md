@@ -21,6 +21,9 @@ Optional large numerals (without them, the big numbers use Montserrat 48):
 Tested with ESP-IDF 6.0.1. Two dependency notes:
 
 - `esp_hosted` is pinned to 2.x. 3.x renamed the hosted-BT Kconfig, and `ble_svc_init()` uses the 2.x calls.
+- `esp_matter` 1.6.0 is built for IDF 5.5 and asks for `esp_wifi_remote` ^0.7. `components/espressif__esp_wifi_remote`
+  is an unmodified copy of 1.6.0 (IDF 6 sources only) that `override_path` makes the solver accept, and the top-level
+  `CMakeLists.txt` relaxes two truncation warnings in connectedhomeip. Drop both once esp-matter supports IDF 6.
 - `components/esp_lvgl_port` is a copy of esp_lvgl_port 2.9.0, patched for IDF 6.0, which removed the DPI `on_frame_buf_complete` callback. Delete it, along with its `override_path` in `main/idf_component.yml`, once upstream has a fix.
 
 ## Updating over Wi-Fi (OTA)
@@ -50,7 +53,7 @@ The first line sent must be the OTA key, which the script sends for you. Command
 
 ## Remote access
 
-**Recommended: a subnet router next to the panel.** A small Linux box on the van LAN (a Raspberry Pi Zero W or Zero 2 W on
+Use a subnet router next to the panel. A small Linux box on the van LAN (a Raspberry Pi Zero W or Zero 2 W on
 12 V through a USB buck works) running Tailscale with `--advertise-routes=192.168.1.0/24` makes the panel reachable
 from the tailnet at its LAN address, with nothing running on the panel:
 
@@ -64,41 +67,32 @@ Approve the route in the admin console and limit it with an ACL to your own devi
 `--accept-routes` on Linux. macOS and phones accept routes by default. A client whose own LAN is also 192.168.1.0/24
 reaches its local network instead, so give the van LAN a less common subnet if that happens.
 
-### On-panel tailnet (Tailscale)
+Anyone who can reach the panel can update it and read its console with only the OTA key, so change it from the
+default (`VanDeck > OTA upload key`).
 
-The panel can also be a tailnet node itself, for when there is no subnet router. **It is expensive:** on 0.5.16, with it
-connected, internal RAM free drops to about 26 KB (minimum about 6 KB), even with the esp_hosted SDIO buffers, mbedtls
-and microlink's tables moved to PSRAM. That leaves little margin for Wi-Fi, BLE and LIN bursts, so treat it as a fallback.
-The patched copies of microlink and esp_hosted in `components/` stay so it keeps working.
+## Apple Home (Matter)
 
-With it on, the update, console and status endpoints work from anywhere without a router
-or port forwarding. It uses [microlink](https://components.espressif.com/components/fugo101/microlink) (Tailscale's
-control protocol + WireGuard, ESP-IDF 6 only). It is **off by default** and costs almost no RAM while off.
+The panel is a Matter accessory (`VanDeck > Matter`, on by default). In the Home app it shows up as:
 
-1. In the Tailscale admin console, create an auth key (Settings > Keys): reusable, and ephemeral if you want a
-   lost panel to drop off the tailnet. Then under Machines, disable key expiry for the panel once it appears.
-2. On the panel: Settings > Tailnet > *Set auth key*, then switch it on. Or, over the USB shell or Wi-Fi console:
-   `tailnet key tskey-auth-...` then `tailnet on`. The console is easier for pasting a long key. The key is kept in
-   NVS (`vd_tail`), so BreezyBox history on the USB shell may contain it too.
-3. It registers as `vandeck` (`VanDeck > Tailnet device name`). Once the Settings tab shows *Connected* with a
-   `100.x` address, the same tools work with that address or the MagicDNS name:
+- **Battery 1** and **Battery 2**: temperature sensors. Open one for its charge (%), charging state and low battery
+  (warning at 20 %, critical at 10 %).
+- **Battery bank**: an electrical sensor with the bank's power, voltage and current. Power is positive while charging.
+  It appears in the Energy view on iOS 27.
 
-```bash
-tools/ota.sh vandeck            # or the 100.x address
-tools/console.sh vandeck
-tools/status.sh vandeck
-```
+To pair, open Settings > Home and scan the QR code from the Home app (+ > Add Accessory), or type the setup code.
+The phone must be on the same Wi-Fi as the panel. Pairing runs over Wi-Fi only, because CHIP-over-BLE would take
+NimBLE away from the battery and charger scanning. Home warns that the accessory is uncertified, because it uses
+the CHIP test vendor ID and test attestation certificates. Choose to add it anyway.
 
-- After the first registration the node keys are stored and the auth key isn't needed again until the node key expires
-  or you run `tailnet forget`. If Tailscale rejects the key, the tab says *Auth key rejected*.
-- It only runs while Wi-Fi is up, and rebinds itself when Wi-Fi reconnects. Allow about 20 s after boot.
-- `GET /status` returns what the `status` command prints as JSON. Like `/ota` it needs the `X-OTA-Key` header.
-- **Everything reachable on the LAN is now reachable from your tailnet**, protected only by the OTA key. Change the
-  default key (`VanDeck > OTA upload key`) and use Tailscale ACLs to limit who can reach the panel. The Tailnet tab
-  warns while the key is still `vandeck`.
-- Sending telemetry out over the tailnet (rather than serving it) isn't implemented: see the `TODO(telemetry)` in
-  `net/tailnet_svc.c`.
-- `tailnet`, `tailnet on|off`, `tailnet key <tskey-...>` and `tailnet forget` manage it from either shell.
+- The setup code is random per panel. It's generated on first start and kept in NVS (`vd_mt`), so it survives
+  restarts and unpairing. It is not the well-known CHIP test code, so nobody else on a campsite network can pair the panel first.
+- For remote access, Apple Home needs a home hub (HomePod or Apple TV) on the van's network.
+- Settings > Home > *Unpair* (tap twice) or `matter unpair` removes the panel from every home and restarts it.
+  Removing it from its last home in the Home app reopens pairing without a restart.
+- CHIP's static state and heap are in PSRAM (`main/linker.lf`, `ESP_MATTER_MEM_ALLOC_MODE_EXTERNAL`). Statically it
+  adds about 5 KB of internal RAM and 0.7 MB of flash. Its use at run time hasn't been measured on the panel yet.
+- **Not yet verified on hardware:** CHIP's own mDNS responder running beside `vandeck.local` (both bind port 5353),
+  and what iOS 27 shows for a Power Source on a temperature sensor and for negative bank power.
 
 ## Shell
 
@@ -124,8 +118,8 @@ The panel's own commands work there and in the Wi-Fi console (`tools/console.sh`
 | `tanks` | LPG and grey water levels |
 | `starlink` | power, reachability, dish statistics |
 | `net` | Wi-Fi network, RSSI, IP |
-| `tailnet [on\|off\|key <k>\|forget]` | tailnet state and address; switch it, register, or leave the tailnet |
 | `ble` | paired devices: RSSI, last advert, reading age |
+| `matter [qr\|unpair]` | Apple Home pairing state and setup code; print the QR payload, or unpair from every home |
 | `screen [30s\|1m\|5m\|never\|wake]` | screen saver state; set the timeout or wake the screen |
 | `grep [-i] [-v] <pattern> [file]` | filter lines, e.g. `status \| grep -i batt` |
 
@@ -149,7 +143,7 @@ main/
   net/starlink.*       dish status over grpc-web, auto-off
   net/ota_svc.*        OTA over Wi-Fi: HTTP upload, mDNS, rollback confirmation
   net/status_api.*     GET /status: read-only JSON of the panel's state (same key as /ota)
-  net/tailnet_svc.*    Tailscale node (microlink): lifecycle, auth key and node keys in NVS, state in M.tn
+  net/matter_svc.*     Matter node for Apple Home: battery and bank endpoints, per-panel setup code, pairing state
   net/log_svc.*        serial console over Wi-Fi (log mirror + commands, port 23)
   app/cli.*, app/shell.c  shell commands; BreezyBox on USB serial (falls back to esp_console)
   ble/ble_svc.*        NimBLE scanning, role-based pairing, stale detection

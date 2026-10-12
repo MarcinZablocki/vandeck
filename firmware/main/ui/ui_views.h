@@ -27,5 +27,4 @@ void ui_settings_refresh(const vd_model_t *m);
 void ui_entry_create(void);
 void ui_entry_open_wifi(const char *ssid);
 void ui_entry_open_victron(int cand_idx);
-void ui_entry_open_tailnet_key(void);
 void ui_entry_open_location(void);

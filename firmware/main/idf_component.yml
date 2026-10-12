@@ -15,12 +15,15 @@ dependencies:
   espressif/esp_hosted:
     version: "==2.12.8"
     override_path: "../components/esp_hosted"
-  espressif/esp_wifi_remote: "==1.6.0"
+  # esp_matter 1.6.0 asks for esp_wifi_remote ^0.7 (IDF 5.x), which can't drive the C6 on IDF 6. override_path
+  # makes the solver take this unmodified copy of 1.6.0 instead (IDF 6.0/6.1 sources only; examples and tests left
+  # out). The directory has the registry-style name because esp_matter REQUIRES the component by that name.
+  espressif/esp_wifi_remote:
+    version: "==1.6.0"
+    override_path: "../components/espressif__esp_wifi_remote"
   espressif/mdns: "^1.8"                    # vandeck.local for OTA uploads
   valdanylchuk/breezybox: "^1.1.1"          # BusyBox-style shell on the USB serial port (needs the littlefs partition)
-  # Tailscale node on the panel (ts2021 control plane + WireGuard); see net/tailnet_svc.c. Needs IDF 6.x.
-  # Patched copy of 3.2.0: DISCO probe table 128 slots in PSRAM, oldest evicted when full (see the VanDeck patch
-  # in src/ml_wg_mgr.c). With 32 it saturated on a ~15-peer tailnet and no direct path ever came up.
-  fugo101/microlink:
-    version: "==3.2.0"
-    override_path: "../components/microlink"
+  # Matter node for Apple Home (net/matter_svc.cpp). 1.6.0 targets IDF 5.5 but builds on 6.0.1 (two warnings relaxed
+  # in the top-level CMakeLists.txt). Pairing is on-network: CHIPoBLE is off, NimBLE stays ble_svc's.
+  espressif/esp_matter:
+    version: "==1.6.0"

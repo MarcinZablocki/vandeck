@@ -23,12 +23,12 @@ config VD_UPDATE_REPO
         The panel checks this repository's latest release for version.json and vandeck.bin (see tools/release.sh)
         and offers or installs newer firmware (Settings > About). Empty: no update checks.
 
-config VD_TAILNET_HOSTNAME
-    string "Tailnet device name"
-    default "vandeck"
+config VD_MATTER
+    bool "Matter (Apple Home)"
+    default y
     help
-        The name the panel registers with on your tailnet (MagicDNS: <name>.<tailnet>.ts.net). The tailnet itself
-        is switched on in Settings > Tailnet, or with the 'tailnet' console command.
+        Expose the batteries as a Matter accessory: charge, charging state and temperature per battery, and the
+        bank's power for the Home app's Energy view. Pair from Settings > Apple Home. Pairing is over Wi-Fi only.
 
 config VD_BATT_CAPACITY_AH
     int "Capacity of one battery (Ah)"

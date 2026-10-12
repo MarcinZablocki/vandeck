@@ -1,6 +1,6 @@
 #include "status_api.h"
 #include "ota_svc.h"
-#include "tailnet_svc.h"
+#include "matter_svc.h"
 #include "app/cli.h"
 #include "app/model.h"
 #include "app/settings.h"
@@ -130,12 +130,9 @@ static esp_err_t on_status(httpd_req_t *r)
     if (m->wifi.connected) str(&j, "ssid", g_cfg.wifi_ssid);
     end(&j, "},");
 
-    char ip[16];
-    tailnet_svc_ip_str(m->tn.ip, ip, sizeof ip);
-    add(&j, "\"tailnet\":{");
-    str(&j, "state", tailnet_svc_state_text(m->tn.state));
-    if (m->tn.ip) str(&j, "ip", ip);
-    integer(&j, "peers", m->tn.peers);
+    add(&j, "\"matter\":{");
+    str(&j, "state", matter_svc_state_text(matter_svc_state()));
+    integer(&j, "homes", matter_svc_fabrics());
     end(&j, "}");
     end(&j, "}\n");
 

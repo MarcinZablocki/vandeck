@@ -14,8 +14,8 @@
 #include "net/weather.h"
 #include "net/update_svc.h"
 #include "net/ota_svc.h"
-#include "net/tailnet_svc.h"
 #include "net/log_svc.h"
+#include "net/matter_svc.h"
 #include "app/cli.h"
 #include "ble/ble_svc.h"
 #include "io/truma_lin.h"
@@ -50,7 +50,6 @@ static void startup(void *arg)
 
     wifi_svc_init();
     ota_svc_init();
-    tailnet_svc_init();   // after Wi-Fi: waits for an IP, then joins the tailnet if it has been switched on
     shell_start();   // BreezyBox on USB serial (if the storage partition exists); shell commands for both consoles
     log_svc_start();
     ble_svc_init();
@@ -59,6 +58,7 @@ static void startup(void *arg)
     starlink_init();
     weather_init();
     update_svc_init();
+    matter_svc_init();   // last: after Wi-Fi (it uses the link) and ble_svc (NimBLE stays ble_svc's)
 #if CONFIG_VD_SIMULATE
     sim_start();
 #endif

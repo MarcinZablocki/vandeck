@@ -3,8 +3,8 @@
 #include "model.h"
 #include "settings.h"
 #include "ble/ble_svc.h"
-#include "net/tailnet_svc.h"
 #include "net/weather.h"
+#include "net/matter_svc.h"
 #include "io/truma_lin.h"
 #include "net/update_svc.h"
 #include "esp_app_desc.h"
@@ -119,15 +119,13 @@ static void print_wifi(const vd_model_t *m)
     else printf("wifi: %s, rssi %d dBm, ip " IPSTR "\n", (char *)ap.ssid, ap.rssi, IP2STR(&ip.ip));
 }
 
-static void print_tailnet(const vd_model_t *m)
+static void print_matter(const vd_model_t *m)
 {
-    const vd_tailnet_t *t = &m->tn;
-    char ip[16];
-    tailnet_svc_ip_str(t->ip, ip, sizeof ip);
-    printf("tailnet: %s", tailnet_svc_state_text(t->state));
-    if (t->state == TN_CONNECTED) printf(", %s as %s, %u peers", ip, tailnet_svc_hostname(), t->peers);
-    else if (t->state == TN_NEED_KEY) printf(" (run 'tailnet key tskey-...')");
-    else if (t->state == TN_AUTH_FAILED) printf(" (expired or revoked: set a new one with 'tailnet key tskey-...')");
+    vd_mt_state_t st = matter_svc_state();
+    char code[20];
+    printf("matter: %s", matter_svc_state_text(st));
+    if (st == MT_PAIRED) printf(", %u home%s", matter_svc_fabrics(), matter_svc_fabrics() == 1 ? "" : "s");
+    if (matter_svc_manual_code(code, sizeof code)) printf(", setup code %s", code);
     printf("\n");
 }
 
@@ -180,7 +178,7 @@ static int run(printer_t p)
 
 static void print_all(const vd_model_t *m)
 {
-    print_batt(m); print_solar(m); print_heater(m); print_tanks(m); print_starlink(m); print_weather(m); print_wifi(m); print_tailnet(m);
+    print_batt(m); print_solar(m); print_heater(m); print_tanks(m); print_starlink(m); print_weather(m); print_wifi(m); print_matter(m);
 }
 
 static int c_status(int c, char **v) { return run(print_all); }
@@ -214,19 +212,23 @@ static int c_weather(int argc, char **argv)
     }
     return run(print_weather);
 }
-static int c_tailnet(int argc, char **argv)
+
+static int c_matter(int argc, char **argv)
 {
     if (argc > 1) {
-        if (!strcmp(argv[1], "on")) { tailnet_svc_set_enabled(true); printf("tailnet switched on (state updates within a second)\n"); }
-        else if (!strcmp(argv[1], "off")) { tailnet_svc_set_enabled(false); printf("tailnet switched off\n"); }
-        else if (!strcmp(argv[1], "key") && argc > 2) {
-            if (tailnet_svc_set_auth_key(argv[2]) != ESP_OK) { printf("that isn't a Tailscale auth key (tskey-auth-...)\n"); return 1; }
-            printf("auth key saved\n");
-        } else if (!strcmp(argv[1], "forget")) { tailnet_svc_forget(); printf("left the tailnet: node keys and auth key erased, switched off\n"); }
-        else { printf("usage: tailnet [on|off|key <tskey-...>|forget]\n"); return 1; }
+        if (!strcmp(argv[1], "unpair")) { printf("forgetting every home and restarting\n"); matter_svc_reset(); return 0; }
+        if (!strcmp(argv[1], "qr")) {
+            char qr[64];
+            if (!matter_svc_qr(qr, sizeof qr)) { printf("not started\n"); return 1; }
+            printf("%s\n", qr);
+            return 0;
+        }
+        printf("usage: matter [qr|unpair]\n");
+        return 1;
     }
-    return run(print_tailnet);
+    return run(print_matter);
 }
+
 static int c_ble(int c, char **v)
 {
     if (c > 1 && !strcmp(v[1], "reset")) { ble_svc_stats_reset(); printf("counters reset\n"); return 0; }
@@ -287,7 +289,7 @@ static int c_grep(int argc, char **argv)
 static const esp_console_cmd_t CMDS[] = {
     { .command = "grep",     .help = "Print lines containing a pattern (-i ignore case, -v invert); reads a file or a pipe", .hint = "[-i] [-v] <pattern> [file]", .func = c_grep },
     { .command = "screen",   .help = "Screen saver: show state, set timeout (30s|1m|5m|never) or 'wake'", .hint = "[30s|1m|5m|never|wake]", .func = c_screen },
-    { .command = "status",   .help = "Everything the panel knows: batteries, solar, heater, tanks, Starlink, Wi-Fi, tailnet", .func = c_status },
+    { .command = "status",   .help = "Everything the panel knows: batteries, solar, heater, tanks, Starlink, Wi-Fi, Matter", .func = c_status },
     { .command = "batt",     .help = "Battery readings (voltage, current, SOC, capacity, temperature)", .func = c_batt },
     { .command = "solar",    .help = "Solar charger: PV power, charge stage, battery side, yield", .func = c_solar },
     { .command = "heater",   .help = "Truma heater: LIN link, settings, room temperature", .func = c_heater },
@@ -296,7 +298,7 @@ static const esp_console_cmd_t CMDS[] = {
     { .command = "update",   .help = "Firmware updates from GitHub releases: show state; check, install, or set off|notify|auto", .hint = "[check|install|off|notify|auto]", .func = c_update },
     { .command = "weather",  .help = "Forecast and its location; 'loc <lat> <lon>' sets one by hand, 'refresh' fetches now", .hint = "[refresh|loc <lat> <lon>]", .func = c_weather },
     { .command = "net",      .help = "Wi-Fi connection the panel is using (BreezyBox 'wifi' manages networks)", .func = c_wifi },
-    { .command = "tailnet",  .help = "Tailscale link: show state; on|off, 'key <tskey-...>' to register, 'forget' to leave the tailnet", .hint = "[on|off|key <k>|forget]", .func = c_tailnet },
+    { .command = "matter",   .help = "Apple Home (Matter): pairing state and setup code; 'qr' prints the QR payload, 'unpair' forgets every home", .hint = "[qr|unpair]", .func = c_matter },
     { .command = "ble",      .help = "Paired BLE devices: signal, last seen, reading age, read success counters", .hint = "[reset]", .func = c_ble },
 };
 

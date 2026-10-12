@@ -10,17 +10,17 @@
 #include "ui.h"
 #include "app/settings.h"
 #include "net/wifi_svc.h"
-#include "net/tailnet_svc.h"
 #include "net/time_svc.h"
 #include "ble/ble_svc.h"
 #include "net/weather.h"
 #include "net/update_svc.h"
+#include "net/matter_svc.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
-enum { TAB_WIFI, TAB_TAILNET, TAB_DEV, TAB_HEATER, TAB_SOLAR, TAB_TIME, TAB_UNITS, TAB_ABOUT, TAB_N };
+enum { TAB_WIFI, TAB_HOME, TAB_DEV, TAB_HEATER, TAB_SOLAR, TAB_TIME, TAB_UNITS, TAB_ABOUT, TAB_N };
 static lv_obj_t *s_root, *tabs[TAB_N], *tab_meta[TAB_N], *panels[TAB_N];
 static int s_tab;
 static int64_t s_last_scan;
@@ -33,7 +33,7 @@ static lv_obj_t *tm_sub, *tm_sw, *tm_tz, *tm_off, *tm_fmt, *tm_manual, *tm_mlabe
 static lv_obj_t *un_seg;
 static uint8_t s_cand_order[PAIR_MAX_CANDS];
 
-static const char *TAB_NAMES[] = { "Wi-Fi", "Tailnet", "Devices", "Heater", "Solar", "Time", "Display", "About" };
+static const char *TAB_NAMES[] = { "Wi-Fi", "Home", "Devices", "Heater", "Solar", "Time", "Display", "About" };
 static const char *FMT_MAP[] = { "24h", "12h", "" };
 static const char *UNIT_MAP[] = { "Celsius °C", "Fahrenheit °F", "" };
 
@@ -113,53 +113,72 @@ static void refresh_wifi(const vd_model_t *m)
     if (s_tab == TAB_WIFI && g_cfg.wifi_on && now_us() - s_last_scan > 15LL * 1000000) { s_last_scan = now_us(); wifi_svc_scan(); }
 }
 
-// --- Tailnet
-static lv_obj_t *tn_sum, *tn_sw, *tn_st, *tn_ip, *tn_peers, *tn_key, *tn_leave, *tn_warn;
+// --- Apple Home (Matter)
+static lv_obj_t *mh_sum, *mh_st, *mh_n, *mh_code, *mh_qrbox, *mh_qr, *mh_hint, *mh_reset;
+static char s_qr_shown[64];
+static int64_t s_reset_armed;
 
-static void on_tn_sw(lv_event_t *e) { tailnet_svc_set_enabled(lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED)); }
-static void on_tn_key(lv_event_t *e) { ui_entry_open_tailnet_key(); }
-static void on_tn_leave(lv_event_t *e) { tailnet_svc_forget(); ui_request_refresh(); }
-
-static void build_tailnet(lv_obj_t *p)
+// Two taps: unpairing removes the panel from every Home and restarts it.
+static void on_mh_reset(lv_event_t *e)
 {
-    lv_obj_t *h = w_header(p, "Tailnet", "", &tn_sum);
-    tn_sw = w_switch(h, on_tn_sw, NULL);
-    lv_obj_t *kv = w_col(p, 12);
-    lv_obj_set_width(kv, 520);
-    tn_st = w_kv(kv, "Status", "");
-    tn_ip = w_kv(kv, "Tailnet address", "");
-    lv_obj_t *name = w_kv(kv, "Name", "");
-    tn_peers = w_kv(kv, "Peers", "");
-    lv_label_set_text(name, tailnet_svc_hostname());
-    for (lv_obj_t **l = (lv_obj_t *[]){ tn_st, tn_ip, name, tn_peers, NULL }; *l; l++) lv_obj_set_style_text_font(*l, F_18, 0);
-
-    lv_obj_t *r = w_row(p, 12);
-    lv_obj_set_style_pad_top(r, 6, 0);
-    tn_key = w_btn(r, "Set auth key", F_16, 48, true, on_tn_key, NULL);
-    tn_leave = w_btn(r, "Leave tailnet", F_16, 48, false, on_tn_leave, NULL);
-    lv_obj_t *hint = w_label(p, F_14, C_MUTED, "The panel needs a Tailscale auth key once (admin console > Settings > Keys). Long keys are easier to paste with 'tailnet key tskey-...' in the console. Turn off key expiry for this machine in the admin console so it never has to re-register.");
-    lv_obj_set_width(hint, LV_PCT(100));
-    lv_label_set_long_mode(hint, LV_LABEL_LONG_WRAP);
-    tn_warn = w_label(p, F_14, C_AMBER, "The OTA key is still the default 'vandeck': anyone on your tailnet can update this panel and read its console. Change it under VanDeck > OTA upload key, or restrict the panel with Tailscale ACLs.");
-    lv_obj_set_width(tn_warn, LV_PCT(100));
-    lv_label_set_long_mode(tn_warn, LV_LABEL_LONG_WRAP);
-    w_show(tn_warn, !strcmp(CONFIG_VD_OTA_KEY, "vandeck"));
+    if (now_us() - s_reset_armed < 5000000) { matter_svc_reset(); return; }
+    s_reset_armed = now_us();
+    ui_request_refresh();
 }
 
-static void refresh_tailnet(const vd_model_t *m)
+static void build_home(lv_obj_t *p)
 {
-    const vd_tailnet_t *t = &m->tn;
-    bool on = tailnet_svc_enabled();
-    w_switch_set(tn_sw, on, C_GREEN);
-    lv_label_set_text(tn_sum, on ? tailnet_svc_state_text(t->state) : "Off");
-    char ip[16];
-    tailnet_svc_ip_str(t->ip, ip, sizeof ip);
-    lv_label_set_text(tn_st, tailnet_svc_state_text(t->state));
-    w_color(tn_st, t->state == TN_CONNECTED ? C_GREEN : t->state == TN_AUTH_FAILED || t->state == TN_ERROR ? C_RED : C_TXT);
-    lv_label_set_text(tn_ip, ip);
-    if (t->state == TN_CONNECTED) w_fmt(tn_peers, "%u", t->peers); else lv_label_set_text(tn_peers, "--");
-    w_btn_text(tn_key, t->has_key || t->has_creds ? "New auth key" : "Set auth key");
-    w_btn_state(tn_leave, false, on || t->has_key || t->has_creds);
+    w_header(p, "Apple Home", "", &mh_sum);
+    lv_obj_t *cols = w_row(p, 28);
+    lv_obj_set_width(cols, LV_PCT(100));
+    lv_obj_set_flex_align(cols, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+    // Dark modules on white with a quiet zone: what phone cameras read best, whatever the theme.
+    mh_qrbox = w_rect(cols, 0xFFFFFF, 12);
+    lv_obj_set_style_pad_all(mh_qrbox, 14, 0);
+    lv_obj_set_size(mh_qrbox, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    mh_qr = lv_qrcode_create(mh_qrbox);
+    lv_qrcode_set_size(mh_qr, 196);
+    lv_qrcode_set_dark_color(mh_qr, lv_color_black());
+    lv_qrcode_set_light_color(mh_qr, lv_color_white());
+    lv_obj_t *c = w_col(cols, 14);
+    lv_obj_set_flex_grow(c, 1);
+    mh_st = w_kv(c, "Status", "");
+    mh_n = w_kv(c, "Paired with", "");
+    mh_code = w_kv(c, "Setup code", "");
+    for (lv_obj_t **l = (lv_obj_t *[]){ mh_st, mh_n, mh_code, NULL }; *l; l++) lv_obj_set_style_text_font(*l, F_18, 0);
+    mh_hint = w_label(c, F_14, C_MUTED, "");
+    lv_obj_set_width(mh_hint, LV_PCT(100));
+    lv_label_set_long_mode(mh_hint, LV_LABEL_LONG_WRAP);
+    mh_reset = w_btn(c, "Unpair", F_16, 48, false, on_mh_reset, NULL);
+}
+
+static void refresh_home(void)
+{
+    vd_mt_state_t st = matter_svc_state();
+    uint8_t n = matter_svc_fabrics();
+    lv_label_set_text(mh_sum, st == MT_PAIRED ? "Batteries and bank power in the Home app" : "Matter accessory, paired over Wi-Fi");
+    lv_label_set_text(mh_st, matter_svc_state_text(st));
+    w_color(mh_st, st == MT_PAIRED ? C_GREEN : st == MT_ERROR ? C_RED : C_TXT);
+    if (st == MT_PAIRED) w_fmt(mh_n, n == 1 ? "1 home" : "%u homes", n); else lv_label_set_text(mh_n, "--");
+    char code[20];
+    if (matter_svc_manual_code(code, sizeof code)) lv_label_set_text(mh_code, code); else lv_label_set_text(mh_code, "--");
+    // The QR only pairs while the panel is unpaired; afterwards a home adds others through its own pairing mode.
+    char qr[64];
+    bool show = st == MT_UNPAIRED && matter_svc_qr(qr, sizeof qr);
+    w_show(mh_qrbox, show);
+    if (show && strcmp(qr, s_qr_shown)) { strlcpy(s_qr_shown, qr, sizeof s_qr_shown); lv_qrcode_update(mh_qr, qr, strlen(qr)); }
+    lv_label_set_text(mh_hint,
+        st == MT_UNPAIRED ? "In the Home app: + > Add Accessory, then scan the code, or choose More options and type the setup code. "
+                            "Your phone must be on the same Wi-Fi as the panel. Home warns that the accessory is uncertified: add it anyway."
+        : st == MT_PAIRED ? "Each battery shows its temperature; open it for charge level and charging. Bank power is in the Energy view (iOS 27). "
+                            "To add the panel to another app as well, turn on pairing mode for it in the Home app."
+        : st == MT_OFF ? "Matter is off in this firmware (VanDeck > Matter)."
+        : st == MT_ERROR ? "Matter didn't start. The console log (tools/console.sh) has the reason."
+        : "Starting...");
+    bool armed = now_us() - s_reset_armed < 5000000;
+    w_show(mh_reset, st == MT_PAIRED);
+    w_btn_text(mh_reset, armed ? "Tap again to unpair" : "Unpair");
+    w_btn_state(mh_reset, armed, true);
 }
 
 // --- Devices
@@ -660,7 +679,7 @@ void ui_settings_create(void)
         lv_obj_set_size(panels[i], LV_PCT(100), LV_PCT(100));
     }
     build_wifi(panels[TAB_WIFI]);
-    build_tailnet(panels[TAB_TAILNET]);
+    build_home(panels[TAB_HOME]);
     build_devices(panels[TAB_DEV]);
     build_heater(panels[TAB_HEATER]);
     build_solar(panels[TAB_SOLAR]);
@@ -679,7 +698,8 @@ void ui_settings_refresh(const vd_model_t *m)
     if (lv_obj_has_flag(s_root, LV_OBJ_FLAG_HIDDEN)) return;
     int on = 0; for (int r = 0; r < ROLE_COUNT; r++) if (m->dev_state[r] == DEV_ON) on++;
     lv_label_set_text(tab_meta[TAB_WIFI], !g_cfg.wifi_on ? "Off" : m->wifi.connected ? g_cfg.wifi_ssid : "--");
-    lv_label_set_text(tab_meta[TAB_TAILNET], !tailnet_svc_enabled() ? "Off" : m->tn.state == TN_CONNECTED ? "On" : "...");
+    vd_mt_state_t mt = matter_svc_state();
+    lv_label_set_text(tab_meta[TAB_HOME], mt == MT_PAIRED ? "Paired" : mt == MT_UNPAIRED ? "--" : mt == MT_OFF ? "Off" : "...");
     w_fmt(tab_meta[TAB_DEV], "%d/%d", on, ROLE_COUNT);
     w_fmt(tab_meta[TAB_HEATER], "%+.1f", g_cfg.room_offset_x10 / 10.0f);
     w_fmt(tab_meta[TAB_SOLAR], "%u W", g_cfg.pv_w);
@@ -690,7 +710,7 @@ void ui_settings_refresh(const vd_model_t *m)
     else lv_label_set_text(tab_meta[TAB_ABOUT], esp_app_get_description()->version);
     switch (s_tab) {
     case TAB_WIFI: refresh_wifi(m); break;
-    case TAB_TAILNET: refresh_tailnet(m); break;
+    case TAB_HOME: refresh_home(); break;
     case TAB_DEV: refresh_devices(m); break;
     case TAB_HEATER: {
         float o = g_cfg.room_offset_x10 / 10.0f;

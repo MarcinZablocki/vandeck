@@ -53,9 +53,6 @@ typedef struct { vd_ota_state_t state; uint8_t pct; char version[32]; char msg[4
 typedef enum { UPD_IDLE, UPD_CHECKING, UPD_CURRENT, UPD_AVAILABLE, UPD_INSTALLING, UPD_FAILED } vd_upd_state_t;
 typedef struct { vd_upd_state_t state; char latest[32]; int64_t checked; uint8_t pct; char msg[48]; } vd_update_t;
 typedef struct { bool active, scanning; uint8_t role; vd_cand_t c[PAIR_MAX_CANDS]; uint8_t n; } vd_pair_t;
-// Tailnet (Tailscale) link. ip is the panel's 100.x address in host byte order, 0 until registered.
-typedef enum { TN_OFF, TN_NEED_KEY, TN_WAIT_WIFI, TN_CONNECTING, TN_CONNECTED, TN_AUTH_FAILED, TN_ERROR } vd_tn_state_t;
-typedef struct { vd_tn_state_t state; bool has_key, has_creds; uint32_t ip; uint8_t peers; } vd_tailnet_t;
 
 typedef struct {
     vd_solar_t solar;
@@ -69,7 +66,6 @@ typedef struct {
     vd_pair_t pair;
     vd_ota_t ota;
     vd_update_t upd;
-    vd_tailnet_t tn;
     bool time_synced;
     bool demo;
     uint32_t version;          // bumped on every change; the UI redraws when it moves

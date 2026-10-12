@@ -6,9 +6,9 @@
 #include "ble/ble_svc.h"
 #include "net/ota_svc.h"
 #include "net/starlink.h"
-#include "net/tailnet_svc.h"
 #include "net/time_svc.h"
 #include "net/update_svc.h"
+#include "net/matter_svc.h"
 #include "net/weather.h"
 #include "net/wifi_svc.h"
 #include "io/tanks.h"
@@ -101,22 +101,17 @@ void starlink_set_power(bool on) { model_lock(); M.sl.power = on; M.sl.power_sin
 void starlink_reboot(void) {}
 void starlink_set_snow(uint8_t mode) { model_lock(); g_cfg.sl_snow = mode; model_commit(); }
 
-static bool s_tn;
-bool tailnet_svc_enabled(void) { return s_tn; }
-void tailnet_svc_set_enabled(bool on) { s_tn = on; model_lock(); M.tn.state = on ? TN_NEED_KEY : TN_OFF; model_commit(); }
-esp_err_t tailnet_svc_set_auth_key(const char *key) { return strncmp(key, "tskey-", 6) ? ESP_ERR_INVALID_ARG : ESP_OK; }
-void tailnet_svc_forget(void) { tailnet_svc_set_enabled(false); }
-const char *tailnet_svc_state_text(vd_tn_state_t st)
+// Matter: unpaired, with CHIP's documentation example code, so Settings > Apple Home shows its QR layout.
+vd_mt_state_t matter_svc_state(void) { return MT_UNPAIRED; }
+const char *matter_svc_state_text(vd_mt_state_t st)
 {
-    static const char *t[] = { "Off", "Needs auth key", "Waiting for Wi-Fi", "Connecting", "Connected", "Auth key rejected", "Error" };
-    return st <= TN_ERROR ? t[st] : "?";
+    static const char *T[] = { "Off", "Starting", "Ready to pair", "Paired", "Error" };
+    return st <= MT_ERROR ? T[st] : "?";
 }
-const char *tailnet_svc_hostname(void) { return "vandeck"; }
-void tailnet_svc_ip_str(uint32_t ip, char *buf, size_t n)
-{
-    if (!ip) snprintf(buf, n, "--");
-    else snprintf(buf, n, "%u.%u.%u.%u", ip >> 24, ip >> 16 & 255, ip >> 8 & 255, ip & 255);
-}
+uint8_t matter_svc_fabrics(void) { return 0; }
+bool matter_svc_qr(char *buf, size_t n) { snprintf(buf, n, "MT:Y.K9042C00KA0648G00"); return true; }
+bool matter_svc_manual_code(char *buf, size_t n) { snprintf(buf, n, "3497-011-2332"); return true; }
+void matter_svc_reset(void) {}
 
 const vd_zone_t VD_ZONES[] = {
     { "Pacific", "" }, { "Mountain", "" }, { "Central", "" }, { "Eastern", "" },

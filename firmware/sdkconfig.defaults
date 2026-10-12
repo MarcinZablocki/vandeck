@@ -20,8 +20,7 @@ CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
 CONFIG_BOOTLOADER_LOG_LEVEL_WARN=y
 CONFIG_COMPILER_OPTIMIZATION_PERF=y
 CONFIG_FREERTOS_HZ=1000
-# Sockets: HTTP server (OTA) + console + mDNS + SNTP + Starlink client + the tailnet (microlink: control plane,
-# DERP, DISCO/STUN, WireGuard UDP); the default 10 runs out.
+# Sockets: HTTP server (OTA) + console + mDNS + SNTP + Starlink, weather and update clients; the default 10 runs out.
 CONFIG_LWIP_MAX_SOCKETS=24
 # Small TCP segments: on a marginal link (the panel at -85 dBm) its large Wi-Fi frames fail outright while
 # ~500-byte ones mostly get through, so long console output / HTTP replies would otherwise stall.
@@ -53,6 +52,8 @@ CONFIG_LV_USE_CLIB_SPRINTF=y
 CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=2048
 CONFIG_LV_COLOR_DEPTH_16=y
 CONFIG_LV_DEF_REFR_PERIOD=16
+# Pairing QR code on Settings > Apple Home.
+CONFIG_LV_USE_QRCODE=y
 CONFIG_LV_FONT_MONTSERRAT_14=y
 CONFIG_LV_FONT_MONTSERRAT_16=y
 CONFIG_LV_FONT_MONTSERRAT_18=y
@@ -125,17 +126,22 @@ CONFIG_BT_NIMBLE_ROLE_BROADCASTER=n
 CONFIG_BT_NIMBLE_MAX_CONNECTIONS=3
 CONFIG_BT_NIMBLE_NVS_PERSIST=y
 
-# Tailnet (microlink, net/tailnet_svc.c). WireGuard decrypts on the lwIP tcpip thread, which the default 3 KB stack
-# can't hold; the Noise handshake and WireGuard need ChaCha20-Poly1305, and the extra mailbox depth absorbs bursts.
-CONFIG_LWIP_TCPIP_TASK_STACK_SIZE=6144
-CONFIG_LWIP_TCPIP_RECVMBOX_SIZE=64
-CONFIG_LWIP_IP4_REASSEMBLY=y
 # TLS buffers (16 KB in + 4 KB out per connection) in PSRAM: in internal RAM the GitHub update check alone
 # (two connections, for the redirect) took internal free down to ~17 KB and BLE commands failed to allocate.
 CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y
-# Lets big static tables marked EXT_RAM_BSS_ATTR (microlink's DISCO probes) live in PSRAM.
+# Lets big static tables marked EXT_RAM_BSS_ATTR live in PSRAM.
 CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
-CONFIG_MBEDTLS_CHACHA20_C=y
-CONFIG_MBEDTLS_POLY1305_C=y
-CONFIG_MBEDTLS_CHACHAPOLY_C=y
-CONFIG_MBEDTLS_HKDF_C=y
+
+# Matter (net/matter_svc.cpp). Pairing over Wi-Fi only: with CHIPoBLE on, CHIP would take over NimBLE (and want the
+# peripheral role) from ble_svc. The setup code is the panel's own (VdCommissionable), not the CHIP test code.
+CONFIG_ENABLE_CHIPOBLE=n
+CONFIG_CUSTOM_COMMISSIONABLE_DATA_PROVIDER=y
+# CHIP's heap in PSRAM: internal RAM stays for DMA (esp_hosted SDIO) and NimBLE.
+CONFIG_ESP_MATTER_MEM_ALLOC_MODE_EXTERNAL=y
+# Wi-Fi only; VanDeck updates itself (ota_svc, update_svc), not through Matter OTA.
+CONFIG_ESP_MATTER_ENABLE_OPENTHREAD=n
+CONFIG_ENABLE_OTA_REQUESTOR=n
+# CHIP's own mDNS responder runs beside espressif/mdns (vandeck.local); both bind 5353 and each gets every packet.
+CONFIG_USE_MINIMAL_MDNS=y
+CONFIG_LWIP_SO_REUSE=y
+CONFIG_LWIP_SO_REUSE_RXTOALL=y

@@ -38,8 +38,26 @@ static void save_now(void *arg)
     ESP_LOGI("cfg", "saved");
 }
 
+// The on-panel tailnet (0.5.x, removed) kept its auth key and node keys in these namespaces. Erase them so
+// those secrets don't linger in flash.
+static void erase_tailnet_leftovers(void)
+{
+    static const char *NS[] = { "vd_tail", "microlink", "ml_peers", "ml_config" };
+    for (size_t i = 0; i < sizeof NS / sizeof NS[0]; i++) {
+        nvs_handle_t h;
+        // Probe read-only first: opening read-write would create the namespace when it isn't there.
+        if (nvs_open(NS[i], NVS_READONLY, &h) != ESP_OK) continue;
+        nvs_close(h);
+        if (nvs_open(NS[i], NVS_READWRITE, &h) != ESP_OK) continue;
+        nvs_erase_all(h);
+        nvs_commit(h);
+        nvs_close(h);
+    }
+}
+
 void settings_load(void)
 {
+    erase_tailnet_leftovers();
     defaults();
     nvs_handle_t h;
     if (nvs_open("vandeck", NVS_READONLY, &h) == ESP_OK) {

@@ -1,0 +1,14 @@
+# CHIP's static state (fabric table, session pools, exchange contexts: ~55 KB) in PSRAM, like the TLS buffers and
+# CHIP's heap. Internal RAM is what esp_hosted's SDIO DMA and NimBLE run short of; nothing in CHIP touches its
+# statics from an ISR or while the flash cache is off. esp_wifi defines an equivalent scheme, but its linker.lf
+# isn't part of a P4 build (Wi-Fi is on the C6), so this one is VanDeck's own.
+[scheme:vd_extram_bss]
+entries:
+    bss -> extern_ram
+    common -> extern_ram
+
+[mapping:vd_matter_bss]
+archive: libespressif__esp_matter.a
+entries:
+    if ESP_ALLOW_BSS_SEG_EXTERNAL_MEMORY = y:
+        * (vd_extram_bss)
