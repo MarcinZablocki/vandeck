@@ -142,7 +142,10 @@ CONFIG_ESP_MATTER_MEM_ALLOC_MODE_EXTERNAL=y
 CONFIG_ESP_MATTER_ENABLE_OPENTHREAD=n
 CONFIG_ENABLE_OTA_REQUESTOR=n
 # CHIP's own mDNS responder runs beside espressif/mdns (vandeck.local); both bind 5353 and each gets every packet.
+# lwIP lets the second one bind only if both set SO_REUSEADDR: CHIP does, espressif/mdns only in socket mode (its
+# raw-lwIP mode binds without it, and CHIP's advertiser then fails with ERR_USE).
 CONFIG_USE_MINIMAL_MDNS=y
+CONFIG_MDNS_NETWORKING_SOCKET=y
 CONFIG_LWIP_SO_REUSE=y
 CONFIG_LWIP_SO_REUSE_RXTOALL=y
 # The Wi-Fi console's log ring (log_svc.c) in PSRAM that start-up doesn't clear, so it survives a crash.

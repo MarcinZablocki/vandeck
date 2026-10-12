@@ -43,8 +43,8 @@ static std::atomic<uint8_t> s_fabrics{0};
 static char s_qr[64], s_manual[16];
 static bool s_skipped;   // the last start didn't survive a minute: not tried again until 'matter retry'
 
-// Crash guard: "try" is set in NVS before Matter starts and cleared once it has run for a minute. Still set at the
-// next start means that start brought the panel down, so it is skipped and the rest of the panel keeps working.
+// Crash guard: "try" is set in NVS before Matter starts and cleared once it has run for a minute. Still set after a
+// crash means that start brought the panel down, so it is skipped and the rest of the panel keeps working.
 static void guard_set(uint8_t v)
 {
     nvs_handle_t h;
@@ -54,12 +54,15 @@ static void guard_set(uint8_t v)
     nvs_close(h);
 }
 
+// Only a crash counts: in a van the power often goes within a minute of starting (ignition), and a restart from
+// the console or an update isn't Matter's fault either.
 static bool guard_tripped(void)
 {
     nvs_handle_t h;
     uint8_t v = 0;
     if (nvs_open("vd_mt", NVS_READONLY, &h) == ESP_OK) { nvs_get_u8(h, "try", &v); nvs_close(h); }
-    return v;
+    esp_reset_reason_t r = esp_reset_reason();
+    return v && (r == ESP_RST_PANIC || r == ESP_RST_INT_WDT || r == ESP_RST_TASK_WDT || r == ESP_RST_WDT);
 }
 
 // --- Setup code: generated once, kept in NVS so the code on the screen stays the same across restarts and resets
