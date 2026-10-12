@@ -70,7 +70,19 @@ reaches its local network instead, so give the van LAN a less common subnet if t
 Anyone who can reach the panel can update it and read its console with only the OTA key, so change it from the
 default (`VanDeck > OTA upload key`).
 
+## Remote website (Cloudflare)
+
+The panel can keep one outbound WebSocket to a Cloudflare Worker, which serves a website with its current values and
+the Truma controls, behind Cloudflare Access. Nothing listens on the panel. Setup, secrets and key rotation are in
+`../cloud/README.md`. On the panel side: `relay url <wss://...>`, `relay key <secret>`, `relay on`. The key lives
+only in NVS (`vd_relay`) and is never printed. Commands from the website go through the same calls as the touch
+screen.
+
 ## Apple Home (Matter)
+
+Matter is **off** in the current build (`CONFIG_VD_MATTER=n`): the code below still builds but never starts. Set it
+back to `y` to use it.
+
 
 The panel is a Matter accessory (`VanDeck > Matter`, on by default). Apple Home has no tile for a plain number and
 shows one battery per accessory, so some values use stand-in device types. Home names the tiles generically, so
@@ -154,6 +166,7 @@ The panel's own commands work there and in the Wi-Fi console (`tools/console.sh`
 | `starlink` | power, reachability, dish statistics |
 | `net` | Wi-Fi network, RSSI, IP |
 | `ble` | paired devices: RSSI, last advert, reading age |
+| `relay [on\|off\|url <u>\|key <k>]` | Cloudflare relay state; switch it, or set its URL and key |
 | `matter [qr\|unpair\|retry]` | Apple Home pairing state and setup code; print the QR payload, unpair from every home, or start Matter again after a skipped start |
 | `screen [30s\|1m\|5m\|never\|wake]` | screen saver state; set the timeout or wake the screen |
 | `grep [-i] [-v] <pattern> [file]` | filter lines, e.g. `status \| grep -i batt` |
@@ -178,6 +191,7 @@ main/
   net/starlink.*       dish status over grpc-web, auto-off
   net/ota_svc.*        OTA over Wi-Fi: HTTP upload, mDNS, rollback confirmation
   net/status_api.*     GET /status: read-only JSON of the panel's state (same key as /ota)
+  net/relay_svc.*      outbound WebSocket to the Cloudflare relay: status out, heater commands in
   net/matter_svc.*     Matter node for Apple Home: bank, batteries, PV, Truma controls; per-panel setup code, pairing
   net/log_svc.*        serial console over Wi-Fi (log mirror + commands, port 23)
   app/cli.*, app/shell.c  shell commands; BreezyBox on USB serial (falls back to esp_console)
