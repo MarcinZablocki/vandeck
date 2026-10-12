@@ -15,7 +15,6 @@
 #include "esp_random.h"
 #include "esp_system.h"
 #include "nvs.h"
-#include "psa/crypto.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <esp_matter.h>
@@ -84,13 +83,6 @@ public:
             ESP_LOGI(TAG, "new setup code generated");
         }
         nvs_close(h);
-        // PBKDF2 goes through PSA, which CHIP otherwise only initialises in esp_matter::start().
-        if (psa_crypto_init() != PSA_SUCCESS) return false;
-        chip::Crypto::Spake2pVerifier v;
-        if (v.Generate(kIterations, chip::ByteSpan(m_salt), m_pin) != CHIP_NO_ERROR) return false;
-        chip::MutableByteSpan out(m_verifier);
-        if (v.Serialize(out) != CHIP_NO_ERROR) return false;
-        m_verifier_len = out.size();
         return true;
     }
 
@@ -98,8 +90,17 @@ public:
     CHIP_ERROR SetSetupDiscriminator(uint16_t) override { return CHIP_ERROR_NOT_IMPLEMENTED; }
     CHIP_ERROR GetSpake2pIterationCount(uint32_t &c) override { c = kIterations; return CHIP_NO_ERROR; }
     CHIP_ERROR GetSpake2pSalt(chip::MutableByteSpan &buf) override { return chip::CopySpanToMutableSpan(chip::ByteSpan(m_salt), buf); }
+    // Computed on first use, on the CHIP thread: the verifier (PBKDF2 + P-256) needs CHIP's crypto set up, and
+    // computing it before esp_matter::start() panicked on the panel.
     CHIP_ERROR GetSpake2pVerifier(chip::MutableByteSpan &buf, size_t &len) override
     {
+        if (!m_verifier_len) {
+            chip::Crypto::Spake2pVerifier v;
+            ReturnErrorOnFailure(v.Generate(kIterations, chip::ByteSpan(m_salt), m_pin));
+            chip::MutableByteSpan out(m_verifier);
+            ReturnErrorOnFailure(v.Serialize(out));
+            m_verifier_len = out.size();
+        }
         len = m_verifier_len;
         return chip::CopySpanToMutableSpan(chip::ByteSpan(m_verifier, m_verifier_len), buf);
     }
@@ -212,6 +213,9 @@ static uint16_t add_battery(node_t *node, int i)
 static uint16_t add_bank(node_t *node)
 {
     endpoint::electrical_sensor::config_t ec;
+    // Power Topology needs exactly one topology; the bank's figures cover the whole node (esp-matter asserts
+    // without one).
+    ec.power_topology.feature_flags = cluster::power_topology::feature::node_topology::get_id();
     cluster::electrical_power_measurement::config_t &pm = ec.with_electrical_power_measurement();
     pm.delegate = &s_bank;
     pm.feature_flags = cluster::electrical_power_measurement::feature::direct_current::get_id();

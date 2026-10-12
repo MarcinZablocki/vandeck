@@ -5,6 +5,7 @@
 #include "esp_attr.h"
 #include "esp_private/panic_internal.h"
 #include "riscv/rvruntime-frames.h"
+#include "hal/cache_hal.h"
 #include "esp_app_desc.h"
 #include "esp_system.h"
 #include "esp_timer.h"
@@ -70,6 +71,8 @@ void __wrap_esp_panic_handler(panic_info_t *info)
         panic_hex((uint32_t)info->addr);
         if (info->frame) { panic_put(" ra "); panic_hex(((const RvExcFrame *)info->frame)->ra); }
         panic_put("\r\n");
+        // PSRAM is behind the cache; the reset would drop these lines (and the last log lines) before they land.
+        cache_hal_writeback_addr((uint32_t)&s_keep, sizeof s_keep);
     }
     __real_esp_panic_handler(info);
 }
