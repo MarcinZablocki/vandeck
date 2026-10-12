@@ -1,0 +1,11 @@
+# The panel's endpoint: one WebSocket, authenticated with the panel key, not behind Access (the panel can't do the
+# email login). Shares the Durable Object defined by the vandeck Worker. Secret: PANEL_KEY.
+name = "vandeck-link"
+main = "src/link.js"
+compatibility_date = "2026-09-01"
+workers_dev = true
+
+[[durable_objects.bindings]]
+name = "VAN"
+class_name = "Van"
+script_name = "vandeck"

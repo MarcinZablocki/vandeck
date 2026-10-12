@@ -205,15 +205,19 @@ static uint16_t s_ep_bank, s_ep_level[2], s_ep_watts, s_ep_pv, s_ep_heat, s_ep_r
 // Writes from controllers. The panel's own updates use attribute::report(), which skips this callback, so only a
 // change made in Home (or another controller) reaches the heater. The stand-ins (bank plug, battery lights) are
 // left alone here and put back by the next update; the fan has its own delegate (TrumaFan).
+// esp-matter routes writable attributes through the write path, callbacks included, even for attribute::report(), so
+// the panel's own pushes are flagged too; and an unchanged value is never re-sent to the heater.
+static bool s_pushing_attr;
+
 static esp_err_t on_attr(attribute::callback_type_t type, uint16_t ep, uint32_t cl, uint32_t at, esp_matter_attr_val_t *v, void *)
 {
-    if (type != attribute::POST_UPDATE || !ep) return ESP_OK;
+    if (type != attribute::POST_UPDATE || !ep || s_pushing_attr) return ESP_OK;
     if (cl != Thermostat::Id) return ESP_OK;
     bool mode = at == Thermostat::Attributes::SystemMode::Id, sp = at == Thermostat::Attributes::OccupiedHeatingSetpoint::Id;
     bool heat = mode && v->val.u8 == (uint8_t)Thermostat::SystemModeEnum::kHeat;
     if (ep == s_ep_heat) {
-        if (mode) truma_set_power(heat);
-        else if (sp) truma_set_setpoint(v->val.i16 / 100.0f);
+        if (mode && heat != g_cfg.heater_on) truma_set_power(heat);
+        else if (sp && fabsf(v->val.i16 / 100.0f - g_cfg.setpoint_c) > 0.05f) truma_set_setpoint(v->val.i16 / 100.0f);
     }
     return ESP_OK;
 }
@@ -301,6 +305,10 @@ static void set_limits(uint16_t ep, int16_t min_c100, int16_t max_c100)
 // The Truma's "Vent" (fan only) is left out: the iNet box can't select it.
 namespace FC = FanControl;
 
+// Set while set_fan() pushes the panel's own state: the cluster calls the delegate back for each step (mode, then
+// percentage), and those half-applied states mustn't come back as commands. Only touched under the CHIP lock.
+static bool s_pushing_fan;
+
 // Two fans: the Truma's fan (Low = Eco, High = High; Off is undone at the next update) and the boiler (Off / Low = Eco /
 // High = Hot), Apple Home's closest thing to a three-way mode switch.
 class TrumaFan : public FC::Delegate {
@@ -312,6 +320,7 @@ public:
     }
     void OnFanDriveStateChanged(const FC::FanDriveState &st) override
     {
+        if (s_pushing_fan) return;
         bool off = st.mode == FC::FanModeEnum::kOff || (!st.percentSetting.IsNull() && st.percentSetting.Value() == 0);
         bool high = !st.percentSetting.IsNull() ? st.percentSetting.Value() > 50
                                                 : st.mode == FC::FanModeEnum::kHigh || st.mode == FC::FanModeEnum::kOn;
@@ -348,9 +357,11 @@ static void set_fan(uint16_t ep, FC::FanModeEnum m)
     auto *f = static_cast<FanControlCluster *>(c);
     // Home shows the percentage, which SetFanMode leaves alone: Off 0 %, Low 50 %, High 100 %.
     chip::Percent pct = m == FC::FanModeEnum::kOff ? 0 : m == FC::FanModeEnum::kHigh ? 100 : 50;
+    s_pushing_fan = true;
     if (f->GetFanMode() != m) f->SetFanMode(m);
     if (f->GetPercentSetting().IsNull() || f->GetPercentSetting().Value() != pct) f->SetPercentSetting(chip::app::DataModel::MakeNullable(pct));
     if (f->GetPercentCurrent() != pct) f->SetPercentCurrent(pct);
+    s_pushing_fan = false;
 }
 
 // Apple Home shows one battery per accessory (every tile's settings show the same one), so the Power Source is the
@@ -449,6 +460,7 @@ static void report(uint16_t ep, uint32_t cl, uint32_t at, esp_matter_attr_val_t 
 static void push_truma(const vd_model_t *m)
 {
     const vd_heater_t *h = &m->heater;
+    s_pushing_attr = true;
     namespace TA = Thermostat::Attributes;
     report(s_ep_heat, Thermostat::Id, TA::LocalTemperature::Id,
            esp_matter_nullable_int16(h->registered && !isnan(h->room_c) ? nullable<int16_t>((int16_t)lroundf(h->room_c * 100)) : nullable<int16_t>()));
@@ -456,6 +468,7 @@ static void push_truma(const vd_model_t *m)
            esp_matter_enum8((uint8_t)(g_cfg.heater_on ? Thermostat::SystemModeEnum::kHeat : Thermostat::SystemModeEnum::kOff)));
     report(s_ep_heat, Thermostat::Id, TA::OccupiedHeatingSetpoint::Id, esp_matter_int16((int16_t)lroundf(g_cfg.setpoint_c * 100)));
     report(s_ep_heat, Thermostat::Id, TA::ThermostatRunningState::Id, esp_matter_bitmap16(h->heating ? 1 : 0));   // bit 0: heat
+    s_pushing_attr = false;
     set_temperature(s_ep_room, h->registered && !isnan(h->room_c) ? chip::app::DataModel::Nullable<int16_t>((int16_t)lroundf(h->room_c * 100))
                                                               : chip::app::DataModel::Nullable<int16_t>());
     set_fan(s_ep_fan, g_cfg.fan == FAN_HIGH ? FC::FanModeEnum::kHigh : FC::FanModeEnum::kLow);

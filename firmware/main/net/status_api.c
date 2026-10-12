@@ -1,6 +1,7 @@
 #include "status_api.h"
 #include "ota_svc.h"
 #include "matter_svc.h"
+#include "relay_svc.h"
 #include "app/cli.h"
 #include "app/model.h"
 #include "app/settings.h"
@@ -13,16 +14,16 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define BUF_SZ 3072
+#define BUF_SZ STATUS_JSON_MAX
 
-typedef struct { char *b; size_t n; } jb_t;
+typedef struct { char *b; size_t n, cap; } jb_t;
 
 static void add(jb_t *j, const char *fmt, ...)
 {
     va_list a; va_start(a, fmt);
-    int w = vsnprintf(j->b + j->n, BUF_SZ - j->n, fmt, a);
+    int w = vsnprintf(j->b + j->n, j->cap - j->n, fmt, a);
     va_end(a);
-    if (w > 0) j->n = j->n + w < BUF_SZ ? j->n + w : BUF_SZ - 1;
+    if (w > 0) j->n = j->n + w < j->cap ? j->n + w : j->cap - 1;
 }
 
 // Objects are written with a trailing comma after every member; end() turns the last one into the closing brace.
@@ -54,21 +55,12 @@ static void str(jb_t *j, const char *k, const char *s)
     add(j, "\",");
 }
 
-static esp_err_t on_status(httpd_req_t *r)
+size_t status_api_json(char *buf, size_t cap)
 {
-    if (!ota_svc_check_key(r)) {
-        httpd_resp_set_status(r, "403 Forbidden");
-        return httpd_resp_sendstr(r, "bad or missing X-OTA-Key\n");
-    }
     vd_model_t *m = heap_caps_malloc(sizeof *m, MALLOC_CAP_SPIRAM);
-    char *buf = heap_caps_malloc(BUF_SZ, MALLOC_CAP_SPIRAM);
-    if (!m || !buf) {
-        free(m); free(buf);
-        httpd_resp_set_status(r, "500 Internal Server Error");
-        return httpd_resp_sendstr(r, "out of memory\n");
-    }
+    if (!m || cap < 2) { free(m); return 0; }
     model_snapshot(m);
-    jb_t j = { buf, 0 };
+    jb_t j = { buf, 0, cap };
 
     add(&j, "{");
     str(&j, "version", esp_app_get_description()->version);
@@ -133,13 +125,34 @@ static esp_err_t on_status(httpd_req_t *r)
     add(&j, "\"matter\":{");
     str(&j, "state", matter_svc_state_text(matter_svc_state()));
     integer(&j, "homes", matter_svc_fabrics());
-    end(&j, "}");
-    end(&j, "}\n");
+    end(&j, "},");
 
+    add(&j, "\"relay\":{");
+    str(&j, "state", relay_svc_state_text(relay_svc_state()));
+    end(&j, "}");
+    end(&j, "}");
+    free(m);
+    return j.n;
+}
+
+static esp_err_t on_status(httpd_req_t *r)
+{
+    if (!ota_svc_check_key(r)) {
+        httpd_resp_set_status(r, "403 Forbidden");
+        return httpd_resp_sendstr(r, "bad or missing X-OTA-Key\n");
+    }
+    char *buf = heap_caps_malloc(BUF_SZ, MALLOC_CAP_SPIRAM);
+    size_t n = buf ? status_api_json(buf, BUF_SZ - 1) : 0;
+    if (!n) {
+        free(buf);
+        httpd_resp_set_status(r, "500 Internal Server Error");
+        return httpd_resp_sendstr(r, "out of memory\n");
+    }
+    buf[n++] = '\n';
     httpd_resp_set_type(r, "application/json");
     httpd_resp_set_hdr(r, "Cache-Control", "no-store");
-    esp_err_t e = httpd_resp_send(r, buf, j.n);
-    free(m); free(buf);
+    esp_err_t e = httpd_resp_send(r, buf, n);
+    free(buf);
     return e;
 }
 

@@ -16,6 +16,7 @@
 #include "net/ota_svc.h"
 #include "net/log_svc.h"
 #include "net/matter_svc.h"
+#include "net/relay_svc.h"
 #include "app/cli.h"
 #include "ble/ble_svc.h"
 #include "io/truma_lin.h"
@@ -58,6 +59,7 @@ static void startup(void *arg)
     starlink_init();
     weather_init();
     update_svc_init();
+    relay_svc_init();    // Cloudflare relay: connects out once Wi-Fi is up, if a URL and key are set
 #if CONFIG_VD_SIMULATE
     sim_start();
 #endif

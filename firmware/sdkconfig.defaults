@@ -132,6 +132,8 @@ CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y
 # Lets big static tables marked EXT_RAM_BSS_ATTR live in PSRAM.
 CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
 
+# Matter is off for now: the code stays and builds, but never starts. Set to y to bring Apple Home back.
+# CONFIG_VD_MATTER is not set
 # Matter (net/matter_svc.cpp). Pairing over Wi-Fi only: with CHIPoBLE on, CHIP would take over NimBLE (and want the
 # peripheral role) from ble_svc. The setup code is the panel's own (VdCommissionable), not the CHIP test code.
 CONFIG_ENABLE_CHIPOBLE=n

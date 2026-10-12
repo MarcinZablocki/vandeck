@@ -5,6 +5,7 @@
 #include "ble/ble_svc.h"
 #include "net/weather.h"
 #include "net/matter_svc.h"
+#include "net/relay_svc.h"
 #include "io/truma_lin.h"
 #include "net/update_svc.h"
 #include "esp_app_desc.h"
@@ -130,6 +131,13 @@ static void print_matter(const vd_model_t *m)
     printf("\n");
 }
 
+static void print_relay(const vd_model_t *m)
+{
+    printf("relay: %s", relay_svc_state_text(relay_svc_state()));
+    if (relay_svc_url()[0]) printf(", %s", relay_svc_url());
+    printf("\n");
+}
+
 static void print_weather(const vd_model_t *m)
 {
     static const char *SRC[] = { "none", "Starlink", "manual" };
@@ -179,7 +187,7 @@ static int run(printer_t p)
 
 static void print_all(const vd_model_t *m)
 {
-    print_batt(m); print_solar(m); print_heater(m); print_tanks(m); print_starlink(m); print_weather(m); print_wifi(m); print_matter(m);
+    print_batt(m); print_solar(m); print_heater(m); print_tanks(m); print_starlink(m); print_weather(m); print_wifi(m); print_matter(m); print_relay(m);
 }
 
 static int c_status(int c, char **v) { return run(print_all); }
@@ -229,6 +237,22 @@ static int c_matter(int argc, char **argv)
         return 1;
     }
     return run(print_matter);
+}
+
+// The key is the Worker's PANEL_KEY secret (cloud/README.md). It isn't printed back.
+static int c_relay(int argc, char **argv)
+{
+    if (argc > 1) {
+        if (!strcmp(argv[1], "on")) relay_svc_set_enabled(true);
+        else if (!strcmp(argv[1], "off")) relay_svc_set_enabled(false);
+        else if (!strcmp(argv[1], "url") && argc > 2) {
+            if (!relay_svc_set_url(argv[2])) { printf("needs a wss:// URL\n"); return 1; }
+        } else if (!strcmp(argv[1], "key") && argc > 2) {
+            if (!relay_svc_set_key(argv[2])) { printf("the key is 32..127 printable characters, no spaces or quotes\n"); return 1; }
+            printf("key saved\n");
+        } else { printf("usage: relay [on|off|url <wss://...>|key <secret>]\n"); return 1; }
+    }
+    return run(print_relay);
 }
 
 static int c_ble(int c, char **v)
@@ -291,7 +315,7 @@ static int c_grep(int argc, char **argv)
 static const esp_console_cmd_t CMDS[] = {
     { .command = "grep",     .help = "Print lines containing a pattern (-i ignore case, -v invert); reads a file or a pipe", .hint = "[-i] [-v] <pattern> [file]", .func = c_grep },
     { .command = "screen",   .help = "Screen saver: show state, set timeout (30s|1m|5m|never) or 'wake'", .hint = "[30s|1m|5m|never|wake]", .func = c_screen },
-    { .command = "status",   .help = "Everything the panel knows: batteries, solar, heater, tanks, Starlink, Wi-Fi, Matter", .func = c_status },
+    { .command = "status",   .help = "Everything the panel knows: batteries, solar, heater, tanks, Starlink, Wi-Fi, Matter, relay", .func = c_status },
     { .command = "batt",     .help = "Battery readings (voltage, current, SOC, capacity, temperature)", .func = c_batt },
     { .command = "solar",    .help = "Solar charger: PV power, charge stage, battery side, yield", .func = c_solar },
     { .command = "heater",   .help = "Truma heater: LIN link, settings, room temperature", .func = c_heater },
@@ -301,6 +325,7 @@ static const esp_console_cmd_t CMDS[] = {
     { .command = "weather",  .help = "Forecast and its location; 'loc <lat> <lon>' sets one by hand, 'refresh' fetches now", .hint = "[refresh|loc <lat> <lon>]", .func = c_weather },
     { .command = "net",      .help = "Wi-Fi connection the panel is using (BreezyBox 'wifi' manages networks)", .func = c_wifi },
     { .command = "matter",   .help = "Apple Home (Matter): pairing state and setup code; 'qr' prints the QR payload, 'unpair' forgets every home, 'retry' after a skipped start", .hint = "[qr|unpair|retry]", .func = c_matter },
+    { .command = "relay",    .help = "Cloudflare relay (remote website): state; on|off, 'url <wss://...>', 'key <secret>'", .hint = "[on|off|url <u>|key <k>]", .func = c_relay },
     { .command = "ble",      .help = "Paired BLE devices: signal, last seen, reading age, read success counters", .hint = "[reset]", .func = c_ble },
 };
 

@@ -1,0 +1,14 @@
+# Website + API, behind Cloudflare Access (one-time code by email). Holds the Durable Object.
+# No account id here: Wrangler uses the logged-in account. Secrets (wrangler secret put ...): ACCESS_TEAM, ACCESS_AUD.
+name = "vandeck"
+main = "src/site.js"
+compatibility_date = "2026-09-01"
+workers_dev = true
+
+[[durable_objects.bindings]]
+name = "VAN"
+class_name = "Van"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Van"]

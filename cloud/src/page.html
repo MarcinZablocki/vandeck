@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>VanDeck</title>
+<style>
+  :root {
+    --bg: #f4f4f2; --card: #ffffff; --inset: #ecece9; --line: #e2e2de;
+    --txt: #1b1c1e; --txt2: #55585d; --muted: #868a90;
+    --amber: #b9771b; --green: #2f8a4a; --red: #c0453c; --blue: #2c7fb0;
+    --btn: #e9e9e6; --btn-on: #1b1c1e; --btn-on-txt: #ffffff;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #121314; --card: #1c1d1f; --inset: #26272a; --line: #2e2f33;
+      --txt: #ecedee; --txt2: #b4b7bb; --muted: #8b8e93;
+      --amber: #ebaf4f; --green: #74d08c; --red: #ec7c74; --blue: #72c2e6;
+      --btn: #323337; --btn-on: #ecedee; --btn-on-txt: #121314;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--txt); font: 16px/1.4 -apple-system, system-ui, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 16px 16px calc(24px + env(safe-area-inset-bottom)); }
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 4px 0 14px; }
+  h1 { font-size: 22px; margin: 0; letter-spacing: -0.01em; }
+  #conn { font-size: 13px; color: var(--muted); text-align: right; }
+  #conn.ok { color: var(--green); } #conn.bad { color: var(--red); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+  .card { background: var(--card); border-radius: 16px; padding: 14px 16px; }
+  .card.wide { grid-column: 1 / -1; }
+  h2 { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin: 0 0 8px; }
+  .big { font-size: 34px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .unit { font-size: 16px; font-weight: 500; color: var(--txt2); margin-left: 2px; }
+  .sub { color: var(--txt2); font-size: 14px; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .row { display: flex; justify-content: space-between; gap: 8px; padding: 6px 0; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+  .row:first-of-type { border-top: 0; }
+  .row span:first-child { color: var(--txt2); }
+  .bar { height: 6px; border-radius: 3px; background: var(--inset); margin-top: 10px; overflow: hidden; }
+  .bar i { display: block; height: 100%; background: var(--green); width: 0; transition: width .4s; }
+  .ctl { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); flex-wrap: wrap; }
+  .ctl:first-of-type { border-top: 0; }
+  .ctl > span { color: var(--txt2); }
+  .seg { display: inline-flex; background: var(--btn); border-radius: 10px; padding: 3px; gap: 2px; }
+  button { font: inherit; border: 0; border-radius: 8px; padding: 8px 14px; min-height: 40px; background: transparent; color: var(--txt); cursor: pointer; }
+  .seg button.on { background: var(--btn-on); color: var(--btn-on-txt); }
+  button:disabled { opacity: .45; cursor: default; }
+  .step { display: inline-flex; align-items: center; gap: 6px; }
+  .step button { background: var(--btn); width: 44px; padding: 0; font-size: 20px; }
+  .step b { min-width: 72px; text-align: center; font-size: 20px; font-variant-numeric: tabular-nums; }
+  #msg { min-height: 20px; font-size: 14px; margin-top: 8px; color: var(--txt2); }
+  #msg.err { color: var(--red); }
+  .warn { color: var(--amber); }
+  footer { color: var(--muted); font-size: 12px; margin-top: 16px; text-align: center; }
+</style>
+</head>
+<body>
+<main>
+  <header><h1>VanDeck</h1><div id="conn">Loading…</div></header>
+
+  <div class="grid">
+    <section class="card">
+      <h2>Battery bank</h2>
+      <div class="big"><span id="soc">--</span><span class="unit">%</span></div>
+      <div class="sub" id="bank"></div>
+      <div class="bar"><i id="socbar"></i></div>
+    </section>
+    <section class="card">
+      <h2>Solar</h2>
+      <div class="big"><span id="pv">--</span><span class="unit">W</span></div>
+      <div class="sub" id="solar"></div>
+    </section>
+    <section class="card">
+      <h2>Inside</h2>
+      <div class="big"><span id="room">--</span><span class="unit">°C</span></div>
+      <div class="sub" id="heatstate"></div>
+    </section>
+
+    <section class="card wide">
+      <h2>Heating</h2>
+      <div class="ctl"><span>Heater</span>
+        <div class="seg" id="c-power"><button data-v="off">Off</button><button data-v="on">On</button></div></div>
+      <div class="ctl"><span>Room setpoint</span>
+        <div class="step"><button id="sp-dn" aria-label="Lower">−</button><b id="sp">--</b><button id="sp-up" aria-label="Raise">+</button></div></div>
+      <div class="ctl"><span>Hot water</span>
+        <div class="seg" id="c-water"><button data-v="off">Off</button><button data-v="eco">Eco</button><button data-v="hot">Hot</button></div></div>
+      <div class="ctl"><span>Fan</span>
+        <div class="seg" id="c-fan"><button data-v="eco">Eco</button><button data-v="high">High</button></div></div>
+      <div id="msg"></div>
+    </section>
+
+    <section class="card">
+      <h2>Batteries</h2>
+      <div id="batts"></div>
+    </section>
+    <section class="card">
+      <h2>Tanks &amp; more</h2>
+      <div id="misc"></div>
+    </section>
+  </div>
+  <footer id="foot"></footer>
+</main>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const WATER = ["off", "eco", "hot"], FAN = ["eco", "high", "vent"], TANK = ["Empty", "¼", "½", "Full"];
+let st = null, busy = false, spPending = null, spTimer = 0;
+
+const fmt = (v, d = 0) => (v === null || v === undefined || Number.isNaN(v) ? "--" : Number(v).toFixed(d));
+function rows(el, list) {
+  el.replaceChildren(...list.map(([k, v, cls]) => {
+    const r = document.createElement("div"); r.className = "row";
+    const a = document.createElement("span"); a.textContent = k;
+    const b = document.createElement("span"); b.textContent = v; if (cls) b.className = cls;
+    r.append(a, b); return r;
+  }));
+}
+function seg(id, value, enabled) {
+  for (const b of $(id).querySelectorAll("button")) { b.classList.toggle("on", b.dataset.v === value); b.disabled = !enabled || busy; }
+}
+function ago(ms) {
+  const s = Math.round((Date.now() - ms) / 1000);
+  return s < 60 ? `${s} s ago` : s < 3600 ? `${Math.round(s / 60)} min ago` : `${Math.round(s / 3600)} h ago`;
+}
+
+function render(snap) {
+  const s = snap.status, fresh = snap.at && Date.now() - snap.at < 60000;
+  const conn = $("conn");
+  conn.textContent = !snap.at ? "Panel hasn't connected yet" : snap.connected && fresh ? `Live · ${ago(snap.at)}` : `Offline · last seen ${ago(snap.at)}`;
+  conn.className = snap.connected && fresh ? "ok" : "bad";
+  if (!s) return;
+  st = s;
+
+  const bs = (s.battery || []).filter((b) => b.valid);
+  const soc = bs.length ? bs.reduce((a, b) => a + b.soc, 0) / bs.length : null;
+  const w = bs.reduce((a, b) => a + b.volts * b.amps, 0), ah = bs.reduce((a, b) => a + (b.remain_ah || 0), 0);
+  $("soc").textContent = fmt(soc);
+  $("socbar").style.width = `${soc ?? 0}%`;
+  $("socbar").style.background = soc !== null && soc <= 20 ? "var(--red)" : "var(--green)";
+  $("bank").textContent = bs.length ? `${w >= 0 ? "Charging" : "Discharging"} ${fmt(Math.abs(w))} W · ${fmt(ah)} Ah left` : "No battery data";
+
+  const so = s.solar || {};
+  $("pv").textContent = so.valid ? fmt(so.pv_w) : "--";
+  $("solar").textContent = so.valid ? `${so.stage || ""} · today ${fmt(so.yield_kwh, 2)} kWh` : "No charger data";
+
+  const h = s.heater || {};
+  $("room").textContent = h.registered ? fmt(h.room_c, 1) : "--";
+  const fault = h.error ? `${h.warning ? "Warning" : "Error"} ${h.error}` : "";
+  $("heatstate").textContent = !h.link ? "Truma not connected" : !h.registered ? "Run PR SET on the CP Plus"
+    : [h.on ? (h.heating ? "Heating" : "On") : "Heating off", fault].filter(Boolean).join(" · ");
+  $("heatstate").className = "sub" + (fault ? " warn" : "");
+
+  const can = !!h.registered && snap.connected && fresh;
+  seg("c-power", h.on ? "on" : "off", can);
+  seg("c-water", WATER[h.water] ?? "", can);
+  seg("c-fan", FAN[h.fan] ?? "", can);
+  if (spPending === null) $("sp").textContent = `${fmt(h.setpoint_c, 1)}°`;
+  $("sp-dn").disabled = $("sp-up").disabled = !can || busy;
+
+  rows($("batts"), (s.battery || []).map((b, i) => [`Battery ${i + 1}`,
+    !b.paired ? "not paired" : !b.valid ? "no data" : `${fmt(b.soc)} % · ${fmt(b.volts, 2)} V · ${fmt(b.amps, 1)} A · ${fmt(b.temp_c)} °C`]));
+  const t = s.tanks || {}, sl = s.starlink || {};
+  rows($("misc"), [
+    ["LPG", t.lpg?.level == null ? "--" : TANK[t.lpg.level]],
+    ["Grey water", t.grey?.level == null ? "--" : TANK[t.grey.level]],
+    ["Starlink", sl.power ? (sl.reachable ? "online" : "starting") : "off"],
+    ["Wi-Fi", s.wifi?.connected ? s.wifi.ssid || "connected" : "--"],
+  ]);
+  $("foot").textContent = `Panel ${s.version || ""}${s.demo ? " · demo data" : ""}`;
+}
+
+async function poll() {
+  try {
+    const r = await fetch("/api/status", { cache: "no-store" });
+    if (r.ok) render(await r.json());
+    else $("conn").textContent = r.status === 403 ? "Signed out: reload to sign in" : "Server error";
+  } catch { $("conn").textContent = "No connection"; $("conn").className = "bad"; }
+}
+
+async function send(set) {
+  if (busy) return;
+  busy = true; const msg = $("msg"); msg.className = ""; msg.textContent = "Sending…";
+  if (st) render({ connected: true, at: Date.now(), status: st });
+  try {
+    const r = await fetch("/api/cmd", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(set) });
+    const j = await r.json().catch(() => ({}));
+    msg.textContent = j.ok ? "Done" : j.error || `Failed (${r.status})`;
+    msg.className = j.ok ? "" : "err";
+  } catch { msg.textContent = "No connection"; msg.className = "err"; }
+  busy = false; spPending = null;
+  await poll();
+  setTimeout(() => { if (msg.textContent === "Done") msg.textContent = ""; }, 3000);
+}
+
+for (const [id, key, map] of [["c-power", "heater_on", (v) => v === "on"], ["c-water", "water", (v) => v], ["c-fan", "fan", (v) => v]]) {
+  $(id).addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b || b.disabled || b.classList.contains("on")) return;
+    send({ [key]: map(b.dataset.v) });
+  });
+}
+// Setpoint: collect taps for a moment, then send once.
+function nudge(d) {
+  const cur = spPending ?? st?.heater?.setpoint_c ?? 20;
+  spPending = Math.min(30, Math.max(5, Math.round((cur + d) * 2) / 2));
+  $("sp").textContent = `${spPending.toFixed(1)}°`;
+  clearTimeout(spTimer);
+  spTimer = setTimeout(() => send({ setpoint_c: spPending }), 900);
+}
+$("sp-dn").addEventListener("click", () => nudge(-0.5));
+$("sp-up").addEventListener("click", () => nudge(0.5));
+
+poll();
+setInterval(() => { if (!document.hidden && !busy) poll(); }, 5000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
+</script>
+</body>
+</html>

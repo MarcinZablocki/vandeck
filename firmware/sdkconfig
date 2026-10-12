@@ -1302,8 +1302,7 @@ CONFIG_PARTITION_TABLE_MD5=y
 CONFIG_VD_OTA_KEY="vandeck"
 # default:
 CONFIG_VD_UPDATE_REPO="MarcinZablocki/vandeck"
-# default:
-CONFIG_VD_MATTER=y
+# CONFIG_VD_MATTER is not set
 # default:
 CONFIG_VD_BATT_CAPACITY_AH=160
 # default:
@@ -5490,6 +5489,15 @@ CONFIG_ESP_SECURE_CERT_DS_PERIPHERAL=y
 # default:
 # CONFIG_ESP_SECURE_CERT_WRITE_ENABLE_LOGGING is not set
 # end of ESP Secure Cert Manager
+
+#
+# ESP WebSocket client
+#
+# default:
+# CONFIG_ESP_WS_CLIENT_ENABLE_DYNAMIC_BUFFER is not set
+# default:
+# CONFIG_ESP_WS_CLIENT_SEPARATE_TX_LOCK is not set
+# end of ESP WebSocket client
 
 #
 # mDNS
