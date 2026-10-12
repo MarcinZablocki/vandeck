@@ -16,3 +16,5 @@ idf_component_register(
            esp_wifi bt mbedtls esp_http_server app_update lwip console vfs
            json espressif__esp_matter
 )
+# log_svc.c copies the panic reason into its reset-proof log ring before the normal panic handler runs.
+target_link_libraries(${COMPONENT_LIB} INTERFACE "-Wl,--wrap=esp_panic_handler")

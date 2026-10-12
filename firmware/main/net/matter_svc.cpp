@@ -315,6 +315,41 @@ static void on_event(const chip::DeviceLayer::ChipDeviceEvent *e, intptr_t)
     }
 }
 
+// Steps are logged with the task's stack headroom: the first start on the panel panicked with nothing logged.
+#define STEP(what) ESP_LOGI(TAG, "%s (stack left %u)", what, (unsigned)uxTaskGetStackHighWaterMark(NULL))
+
+static void start_task(void *)
+{
+    STEP("setup code");
+    if (!s_commissionable.init()) { ESP_LOGE(TAG, "setup code"); s_state = MT_ERROR; vTaskDelete(NULL); }
+    set_custom_commissionable_data_provider(&s_commissionable);
+
+    STEP("data model");
+    node::config_t nc;
+    node_t *node = node::create(&nc, on_attr, on_identify);
+    if (!node) { s_state = MT_ERROR; vTaskDelete(NULL); }
+    for (int i = 0; i < 2; i++) s_ep_batt[i] = add_battery(node, i);
+    s_ep_bank = add_bank(node);
+
+    STEP("stack");
+    if (esp_matter::start(on_event) != ESP_OK) { ESP_LOGE(TAG, "start failed"); s_state = MT_ERROR; vTaskDelete(NULL); }
+    {
+        lock::ScopedChipStackLock lock(portMAX_DELAY);
+        // wifi_svc joins and rejoins networks; CHIP only uses the link.
+        if (chip::DeviceLayer::ConnectivityMgr().SetWiFiStationMode(chip::DeviceLayer::ConnectivityManager::kWiFiStationMode_ApplicationControlled) != CHIP_NO_ERROR)
+            ESP_LOGW(TAG, "Wi-Fi station mode");
+        chip::RendezvousInformationFlags rf(chip::RendezvousInformationFlag::kOnNetwork);
+        chip::MutableCharSpan qr(s_qr, sizeof s_qr - 1), mc(s_manual, sizeof s_manual - 1);
+        if (GetQRCode(qr, rf) == CHIP_NO_ERROR) s_qr[qr.size()] = 0;
+        if (GetManualPairingCode(mc, rf) == CHIP_NO_ERROR) s_manual[mc.size()] = 0;
+        count_fabrics();
+    }
+    STEP("started");
+    ESP_LOGI(TAG, "up: battery endpoints %u, %u; bank %u; %u controller(s)", s_ep_batt[0], s_ep_batt[1], s_ep_bank, s_fabrics.load());
+    xTaskCreate(update_task, "matter_upd", 4096, nullptr, 3, nullptr);
+    vTaskDelete(NULL);
+}
+
 extern "C" void matter_svc_init(void)
 {
 #if CONFIG_VD_MATTER
@@ -327,29 +362,9 @@ extern "C" void matter_svc_init(void)
     guard_set(1);
     s_state = MT_STARTING;
     esp_log_level_set("esp_matter_attribute", ESP_LOG_WARN);   // it logs every attribute write at info
-    if (!s_commissionable.init()) { ESP_LOGE(TAG, "setup code"); s_state = MT_ERROR; return; }
-    set_custom_commissionable_data_provider(&s_commissionable);
-
-    node::config_t nc;
-    node_t *node = node::create(&nc, on_attr, on_identify);
-    if (!node) { s_state = MT_ERROR; return; }
-    for (int i = 0; i < 2; i++) s_ep_batt[i] = add_battery(node, i);
-    s_ep_bank = add_bank(node);
-
-    if (esp_matter::start(on_event) != ESP_OK) { ESP_LOGE(TAG, "start failed"); s_state = MT_ERROR; return; }
-    {
-        lock::ScopedChipStackLock lock(portMAX_DELAY);
-        // wifi_svc joins and rejoins networks; CHIP only uses the link.
-        if (chip::DeviceLayer::ConnectivityMgr().SetWiFiStationMode(chip::DeviceLayer::ConnectivityManager::kWiFiStationMode_ApplicationControlled) != CHIP_NO_ERROR)
-            ESP_LOGW(TAG, "Wi-Fi station mode");
-        chip::RendezvousInformationFlags rf(chip::RendezvousInformationFlag::kOnNetwork);
-        chip::MutableCharSpan qr(s_qr, sizeof s_qr - 1), mc(s_manual, sizeof s_manual - 1);
-        if (GetQRCode(qr, rf) == CHIP_NO_ERROR) s_qr[qr.size()] = 0;
-        if (GetManualPairingCode(mc, rf) == CHIP_NO_ERROR) s_manual[mc.size()] = 0;
-        count_fabrics();
-    }
-    ESP_LOGI(TAG, "up: battery endpoints %u, %u; bank %u; %u controller(s)", s_ep_batt[0], s_ep_batt[1], s_ep_bank, s_fabrics.load());
-    xTaskCreate(update_task, "matter_upd", 4096, nullptr, 3, nullptr);
+    // Its own task: the SPAKE2+ verifier (PBKDF2 + P-256) and esp_matter::start() need more stack than start-up
+    // has to spare. Internal RAM, since CHIP writes NVS from here (flash ops can't run on a PSRAM stack).
+    if (xTaskCreate(start_task, "matter_start", 16384, nullptr, 3, nullptr) != pdPASS) { ESP_LOGE(TAG, "no memory for start task"); s_state = MT_ERROR; }
 #endif
 }
 

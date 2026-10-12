@@ -3,6 +3,8 @@
 #include "esp_log.h"
 #include "esp_heap_caps.h"
 #include "esp_attr.h"
+#include "esp_private/panic_internal.h"
+#include "riscv/rvruntime-frames.h"
 #include "esp_app_desc.h"
 #include "esp_system.h"
 #include "esp_timer.h"
@@ -43,6 +45,33 @@ static void ring_put(const char *d, size_t n)
     for (size_t i = 0; i < n; i++) s_ring[(s_keep.total + i) % RING_SZ] = d[i];
     s_keep.total += n;
     portEXIT_CRITICAL(&s_mux);
+}
+
+// The panic report goes straight to UART0, which nobody watches on the van. Add its gist to the ring (kept
+// through the reset) so the Wi-Fi console shows it after the restart: reason, abort details, PC and return address
+// (riscv32-esp-elf-addr2line -e build/vandeck.elf <pc> <ra>). No locks or printf here: the other core may hold them.
+static void panic_put(const char *s) { while (s && *s) s_ring[s_keep.total++ % RING_SZ] = *s++; }
+static void panic_hex(uint32_t v)
+{
+    char b[11] = "0x";
+    for (int i = 0; i < 8; i++) b[2 + i] = "0123456789abcdef"[(v >> (28 - 4 * i)) & 15];
+    b[10] = 0;
+    panic_put(b);
+}
+
+void __real_esp_panic_handler(panic_info_t *info);
+void __wrap_esp_panic_handler(panic_info_t *info)
+{
+    if (s_ring) {
+        panic_put("\r\n!!! panic: ");
+        panic_put(g_panic_abort ? g_panic_abort_details : info->reason);
+        if (info->description) { panic_put(" - "); panic_put(info->description); }
+        panic_put("\r\n!!! pc ");
+        panic_hex((uint32_t)info->addr);
+        if (info->frame) { panic_put(" ra "); panic_hex(((const RvExcFrame *)info->frame)->ra); }
+        panic_put("\r\n");
+    }
+    __real_esp_panic_handler(info);
 }
 
 static int log_hook(const char *fmt, va_list args)
