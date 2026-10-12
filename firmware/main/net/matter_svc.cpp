@@ -13,6 +13,7 @@
 #include <string.h>
 #include "esp_log.h"
 #include "esp_random.h"
+#include "esp_system.h"
 #include "nvs.h"
 #include "psa/crypto.h"
 #include "freertos/FreeRTOS.h"
@@ -41,6 +42,26 @@ static const char *TAG = "matter";
 static std::atomic<vd_mt_state_t> s_state{MT_OFF};
 static std::atomic<uint8_t> s_fabrics{0};
 static char s_qr[64], s_manual[16];
+static bool s_skipped;   // the last start didn't survive a minute: not tried again until 'matter retry'
+
+// Crash guard: "try" is set in NVS before Matter starts and cleared once it has run for a minute. Still set at the
+// next start means that start brought the panel down, so it is skipped and the rest of the panel keeps working.
+static void guard_set(uint8_t v)
+{
+    nvs_handle_t h;
+    if (nvs_open("vd_mt", NVS_READWRITE, &h) != ESP_OK) return;
+    nvs_set_u8(h, "try", v);
+    nvs_commit(h);
+    nvs_close(h);
+}
+
+static bool guard_tripped(void)
+{
+    nvs_handle_t h;
+    uint8_t v = 0;
+    if (nvs_open("vd_mt", NVS_READONLY, &h) == ESP_OK) { nvs_get_u8(h, "try", &v); nvs_close(h); }
+    return v;
+}
 
 // --- Setup code: generated once, kept in NVS so the code on the screen stays the same across restarts and resets
 
@@ -255,7 +276,8 @@ static void push_bank(const vd_model_t *m)
 static void update_task(void *)
 {
     static vd_model_t m;   // large (Starlink history): not on this task's stack
-    for (;;) {
+    for (int n = 0;; n++) {
+        if (n == 6) guard_set(0);   // a minute up: this start is good
         model_snapshot(&m);
         for (int i = 0; i < 2; i++) push_battery(i, &m.batt[i]);
         push_bank(&m);
@@ -296,6 +318,13 @@ static void on_event(const chip::DeviceLayer::ChipDeviceEvent *e, intptr_t)
 extern "C" void matter_svc_init(void)
 {
 #if CONFIG_VD_MATTER
+    if (guard_tripped()) {
+        ESP_LOGE(TAG, "skipped: the last start didn't survive a minute ('matter retry' to try again)");
+        s_skipped = true;
+        s_state = MT_ERROR;
+        return;
+    }
+    guard_set(1);
     s_state = MT_STARTING;
     esp_log_level_set("esp_matter_attribute", ESP_LOG_WARN);   // it logs every attribute write at info
     if (!s_commissionable.init()) { ESP_LOGE(TAG, "setup code"); s_state = MT_ERROR; return; }
@@ -325,6 +354,13 @@ extern "C" void matter_svc_init(void)
 }
 
 extern "C" vd_mt_state_t matter_svc_state(void) { return s_state; }
+extern "C" bool matter_svc_skipped(void) { return s_skipped; }
+
+extern "C" void matter_svc_retry(void)
+{
+    guard_set(0);
+    esp_restart();
+}
 extern "C" uint8_t matter_svc_fabrics(void) { return s_fabrics; }
 
 extern "C" const char *matter_svc_state_text(vd_mt_state_t st)

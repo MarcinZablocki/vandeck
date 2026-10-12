@@ -125,6 +125,7 @@ static void print_matter(const vd_model_t *m)
     char code[20];
     printf("matter: %s", matter_svc_state_text(st));
     if (st == MT_PAIRED) printf(", %u home%s", matter_svc_fabrics(), matter_svc_fabrics() == 1 ? "" : "s");
+    if (matter_svc_skipped()) printf(" (skipped: the last start brought the panel down; 'matter retry')");
     if (matter_svc_manual_code(code, sizeof code)) printf(", setup code %s", code);
     printf("\n");
 }
@@ -217,13 +218,14 @@ static int c_matter(int argc, char **argv)
 {
     if (argc > 1) {
         if (!strcmp(argv[1], "unpair")) { printf("forgetting every home and restarting\n"); matter_svc_reset(); return 0; }
+        if (!strcmp(argv[1], "retry")) { printf("restarting to start Matter again\n"); matter_svc_retry(); return 0; }
         if (!strcmp(argv[1], "qr")) {
             char qr[64];
             if (!matter_svc_qr(qr, sizeof qr)) { printf("not started\n"); return 1; }
             printf("%s\n", qr);
             return 0;
         }
-        printf("usage: matter [qr|unpair]\n");
+        printf("usage: matter [qr|unpair|retry]\n");
         return 1;
     }
     return run(print_matter);
@@ -298,7 +300,7 @@ static const esp_console_cmd_t CMDS[] = {
     { .command = "update",   .help = "Firmware updates from GitHub releases: show state; check, install, or set off|notify|auto", .hint = "[check|install|off|notify|auto]", .func = c_update },
     { .command = "weather",  .help = "Forecast and its location; 'loc <lat> <lon>' sets one by hand, 'refresh' fetches now", .hint = "[refresh|loc <lat> <lon>]", .func = c_weather },
     { .command = "net",      .help = "Wi-Fi connection the panel is using (BreezyBox 'wifi' manages networks)", .func = c_wifi },
-    { .command = "matter",   .help = "Apple Home (Matter): pairing state and setup code; 'qr' prints the QR payload, 'unpair' forgets every home", .hint = "[qr|unpair]", .func = c_matter },
+    { .command = "matter",   .help = "Apple Home (Matter): pairing state and setup code; 'qr' prints the QR payload, 'unpair' forgets every home, 'retry' after a skipped start", .hint = "[qr|unpair|retry]", .func = c_matter },
     { .command = "ble",      .help = "Paired BLE devices: signal, last seen, reading age, read success counters", .hint = "[reset]", .func = c_ble },
 };
 

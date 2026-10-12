@@ -2,6 +2,7 @@
 #include "log_svc.h"
 #include "esp_log.h"
 #include "esp_heap_caps.h"
+#include "esp_attr.h"
 #include "esp_app_desc.h"
 #include "esp_system.h"
 #include "esp_timer.h"
@@ -24,8 +25,12 @@
 #define PORT     23
 #define RING_SZ  (32 * 1024)
 
-static char *s_ring;                       // PSRAM; s_total = bytes ever written, position = s_total % RING_SZ
-static uint64_t s_total;
+// The ring lives in PSRAM that start-up doesn't clear, and PSRAM keeps its contents through software, panic and
+// watchdog resets: after a crash the console still shows how the previous run ended. A power-on leaves garbage,
+// which the magic check throws away. total = bytes ever written; position = total % RING_SZ.
+#define RING_MAGIC 0x56444C47u
+static EXT_RAM_NOINIT_ATTR struct { uint32_t magic; uint64_t total; char d[RING_SZ]; } s_keep;
+static char *s_ring;
 static portMUX_TYPE s_mux = portMUX_INITIALIZER_UNLOCKED;
 static SemaphoreHandle_t s_fmt_lock;       // guards s_fmt (log calls can come from any task)
 static char s_fmt[512];
@@ -35,8 +40,8 @@ static TaskHandle_t s_task;
 static void ring_put(const char *d, size_t n)
 {
     portENTER_CRITICAL(&s_mux);
-    for (size_t i = 0; i < n; i++) s_ring[(s_total + i) % RING_SZ] = d[i];
-    s_total += n;
+    for (size_t i = 0; i < n; i++) s_ring[(s_keep.total + i) % RING_SZ] = d[i];
+    s_keep.total += n;
     portEXIT_CRITICAL(&s_mux);
 }
 
@@ -59,9 +64,14 @@ static int log_hook(const char *fmt, va_list args)
 void log_svc_capture(void)
 {
     if (s_ring) return;
-    s_ring = heap_caps_malloc(RING_SZ, MALLOC_CAP_SPIRAM);
     s_fmt_lock = xSemaphoreCreateMutex();
-    if (!s_ring || !s_fmt_lock) return;
+    if (!s_fmt_lock) return;
+    s_ring = s_keep.d;
+    if (s_keep.magic != RING_MAGIC || esp_reset_reason() == ESP_RST_POWERON) { s_keep.magic = RING_MAGIC; s_keep.total = 0; }
+    else {
+        static const char M[] = "\r\n===== restarted: the log above is from before the reset =====\r\n\r\n";
+        ring_put(M, sizeof M - 1);
+    }
     s_uart = esp_log_set_vprintf(log_hook);
 }
 
@@ -182,13 +192,13 @@ static void serve(int fd)
     const esp_app_desc_t *d = esp_app_get_description();
     say(fd, "\r\n%s %s - recent log follows, then live output. 'help' for commands.\r\n\r\n", d->project_name, d->version);
     portENTER_CRITICAL(&s_mux);
-    uint64_t pos = s_total > RING_SZ ? s_total - RING_SZ : 0;
+    uint64_t pos = s_keep.total > RING_SZ ? s_keep.total - RING_SZ : 0;
     portEXIT_CRITICAL(&s_mux);
 
     static char out[1024];
     for (;;) {
         portENTER_CRITICAL(&s_mux);
-        uint64_t total = s_total;
+        uint64_t total = s_keep.total;
         bool dropped = total - pos > RING_SZ;
         if (dropped) pos = total - RING_SZ;
         size_t k = 0;

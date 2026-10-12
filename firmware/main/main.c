@@ -58,7 +58,6 @@ static void startup(void *arg)
     starlink_init();
     weather_init();
     update_svc_init();
-    matter_svc_init();   // last: after Wi-Fi (it uses the link) and ble_svc (NimBLE stays ble_svc's)
 #if CONFIG_VD_SIMULATE
     sim_start();
 #endif
@@ -70,6 +69,9 @@ static void startup(void *arg)
     // crashes or hangs during start-up gets rolled back to the previous firmware by the bootloader.
     vTaskDelay(pdMS_TO_TICKS(30000));
     ota_svc_mark_valid();
+    // Matter only once the image is confirmed: it is the newest and heaviest part, and if it brings the panel down
+    // the rest keeps running (matter_svc skips itself on the next start) instead of the whole update rolling back.
+    matter_svc_init();
     vTaskDelete(NULL);
 }
 

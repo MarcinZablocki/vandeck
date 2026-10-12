@@ -173,6 +173,8 @@ static void refresh_home(void)
         : st == MT_PAIRED ? "Each battery shows its temperature; open it for charge level and charging. Bank power is in the Energy view (iOS 27). "
                             "To add the panel to another app as well, turn on pairing mode for it in the Home app."
         : st == MT_OFF ? "Matter is off in this firmware (VanDeck > Matter)."
+        : st == MT_ERROR && matter_svc_skipped() ? "Matter was skipped: its last start brought the panel down. The console log (tools/console.sh) "
+                                                   "shows how that run ended; 'matter retry' there tries again."
         : st == MT_ERROR ? "Matter didn't start. The console log (tools/console.sh) has the reason."
         : "Starting...");
     bool armed = now_us() - s_reset_armed < 5000000;

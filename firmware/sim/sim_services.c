@@ -112,6 +112,8 @@ uint8_t matter_svc_fabrics(void) { return 0; }
 bool matter_svc_qr(char *buf, size_t n) { snprintf(buf, n, "MT:Y.K9042C00KA0648G00"); return true; }
 bool matter_svc_manual_code(char *buf, size_t n) { snprintf(buf, n, "3497-011-2332"); return true; }
 void matter_svc_reset(void) {}
+bool matter_svc_skipped(void) { return false; }
+void matter_svc_retry(void) {}
 
 const vd_zone_t VD_ZONES[] = {
     { "Pacific", "" }, { "Mountain", "" }, { "Central", "" }, { "Eastern", "" },

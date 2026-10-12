@@ -145,3 +145,5 @@ CONFIG_ENABLE_OTA_REQUESTOR=n
 CONFIG_USE_MINIMAL_MDNS=y
 CONFIG_LWIP_SO_REUSE=y
 CONFIG_LWIP_SO_REUSE_RXTOALL=y
+# The Wi-Fi console's log ring (log_svc.c) in PSRAM that start-up doesn't clear, so it survives a crash.
+CONFIG_SPIRAM_ALLOW_NOINIT_SEG_EXTERNAL_MEMORY=y
