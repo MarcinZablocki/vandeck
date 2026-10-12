@@ -157,6 +157,10 @@ bool weather_place(const char **name, const char **country)
 void wifi_svc_set_enabled(bool on) { model_lock(); g_cfg.wifi_on = on; M.wifi.connected = on; model_commit(); }
 void wifi_svc_scan(void) {}
 void wifi_svc_connect(const char *ssid, const char *pass) {}
+bool wifi_svc_connect_saved(const char *ssid) { return false; }
+bool wifi_svc_is_saved(const char *ssid) { return false; }
+int wifi_svc_saved(char (*ssids)[33], int max) { return 0; }
+bool wifi_svc_forget(const char *ssid) { return false; }
 
 void tanks_read(int tank) {}
 

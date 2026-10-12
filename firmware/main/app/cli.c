@@ -6,6 +6,7 @@
 #include "net/weather.h"
 #include "net/matter_svc.h"
 #include "net/relay_svc.h"
+#include "net/wifi_svc.h"
 #include "io/truma_lin.h"
 #include "net/update_svc.h"
 #include "esp_app_desc.h"
@@ -196,7 +197,22 @@ static int c_solar(int c, char **v) { return run(print_solar); }
 static int c_heater(int c, char **v) { return run(print_heater); }
 static int c_tanks(int c, char **v) { return run(print_tanks); }
 static int c_starlink(int c, char **v) { return run(print_starlink); }
-static int c_wifi(int c, char **v) { return run(print_wifi); }
+static int c_wifi(int argc, char **argv)
+{
+    if (argc > 2 && !strcmp(argv[1], "forget")) {
+        if (!wifi_svc_forget(argv[2])) { printf("%s isn't remembered\n", argv[2]); return 1; }
+        printf("forgot %s\n", argv[2]);
+        return 0;
+    }
+    if (argc > 1) { printf("usage: net [forget <ssid>]\n"); return 1; }
+    int r = run(print_wifi);
+    char ssids[WIFI_SAVED_MAX][33];
+    int n = wifi_svc_saved(ssids, WIFI_SAVED_MAX);
+    printf("remembered (newest first):");
+    for (int i = 0; i < n; i++) printf("%s %s", i ? "," : "", ssids[i]);
+    printf("%s\n", n ? "" : " none");
+    return r;
+}
 static int c_update(int argc, char **argv)
 {
     static const char *MODE[] = { "off", "notify", "auto" };
@@ -323,7 +339,7 @@ static const esp_console_cmd_t CMDS[] = {
     { .command = "starlink", .help = "Starlink power and dish statistics", .func = c_starlink },
     { .command = "update",   .help = "Firmware updates from GitHub releases: show state; check, install, or set off|notify|auto", .hint = "[check|install|off|notify|auto]", .func = c_update },
     { .command = "weather",  .help = "Forecast and its location; 'loc <lat> <lon>' sets one by hand, 'refresh' fetches now", .hint = "[refresh|loc <lat> <lon>]", .func = c_weather },
-    { .command = "net",      .help = "Wi-Fi connection the panel is using (BreezyBox 'wifi' manages networks)", .func = c_wifi },
+    { .command = "net",      .help = "Wi-Fi in use and the remembered networks; 'forget <ssid>' drops one", .hint = "[forget <ssid>]", .func = c_wifi },
     { .command = "matter",   .help = "Apple Home (Matter): pairing state and setup code; 'qr' prints the QR payload, 'unpair' forgets every home, 'retry' after a skipped start", .hint = "[qr|unpair|retry]", .func = c_matter },
     { .command = "relay",    .help = "Cloudflare relay (remote website): state; on|off, 'url <wss://...>', 'key <secret>'", .hint = "[on|off|url <u>|key <k>]", .func = c_relay },
     { .command = "ble",      .help = "Paired BLE devices: signal, last seen, reading age, read success counters", .hint = "[reset]", .func = c_ble },

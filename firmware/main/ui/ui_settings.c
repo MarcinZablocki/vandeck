@@ -62,7 +62,16 @@ static void on_net(lv_event_t *e)
     int i = (int)(intptr_t)lv_event_get_user_data(e);
     const vd_net_t *n = &ui_model()->wifi.nets[i];
     if (!strcmp(n->ssid, g_cfg.wifi_ssid) && ui_model()->wifi.connected) return;
+    if (wifi_svc_connect_saved(n->ssid)) return;   // remembered: no password needed
     if (n->secure) ui_entry_open_wifi(n->ssid); else wifi_svc_connect(n->ssid, "");
+}
+
+// Hold a remembered network to forget it (the one in use stays connected until it drops).
+static void on_net_hold(lv_event_t *e)
+{
+    int i = (int)(intptr_t)lv_event_get_user_data(e);
+    const vd_net_t *n = &ui_model()->wifi.nets[i];
+    if (wifi_svc_forget(n->ssid)) ui_request_refresh();
 }
 
 static void build_wifi(lv_obj_t *p)
@@ -81,12 +90,14 @@ static void build_wifi(lv_obj_t *p)
         lv_obj_set_style_pad_hor(r, 20, 0);
         lv_obj_set_flex_flow(r, LV_FLEX_FLOW_ROW);
         lv_obj_set_flex_align(r, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-        lv_obj_add_event_cb(r, on_net, LV_EVENT_CLICKED, (void *)(intptr_t)i);
+        lv_obj_add_event_cb(r, on_net, LV_EVENT_SHORT_CLICKED, (void *)(intptr_t)i);
+        lv_obj_add_event_cb(r, on_net_hold, LV_EVENT_LONG_PRESSED, (void *)(intptr_t)i);
         lv_obj_t *c = w_col(r, 2);
         wf_ssid[i] = w_label(c, F_18, C_TXT, "");
         wf_meta[i] = w_label(c, F_14, C_MUTED, "");
         wf_stat[i] = w_label(r, F_16, C_TXT2, "");
     }
+    w_label(p, F_14, C_MUTED, "Remembered networks join by themselves, the strongest in range first. Hold one to forget it.");
 }
 
 static void refresh_wifi(const vd_model_t *m)
@@ -106,7 +117,8 @@ static void refresh_wifi(const vd_model_t *m)
         const vd_net_t *n = &w->nets[i];
         bool cur = w->connected && !strcmp(n->ssid, g_cfg.wifi_ssid), j = !strcmp(n->ssid, w->joining);
         lv_label_set_text(wf_ssid[i], n->ssid);
-        w_fmt(wf_meta[i], "%s - %s", n->secure ? "Secured" : "Open", n->rssi > -60 ? "strong" : n->rssi > -72 ? "good" : "weak");
+        w_fmt(wf_meta[i], "%s%s - %s", n->saved ? "Saved - " : "", n->secure ? "Secured" : "Open",
+              n->rssi > -60 ? "strong" : n->rssi > -72 ? "good" : "weak");
         lv_label_set_text(wf_stat[i], cur ? "Connected" : j ? "Connecting..." : "Join");
         w_color(wf_stat[i], cur ? C_GREEN : j ? C_AMBER : C_TXT2);
     }

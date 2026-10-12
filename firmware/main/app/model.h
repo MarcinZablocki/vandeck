@@ -44,7 +44,7 @@ typedef struct {
     float temp, feels, wind_kmh; uint8_t code, humidity; bool day;
     vd_wx_hour_t hour[WX_HOURS]; vd_wx_day_t daily[WX_DAYS]; uint8_t n_hours, n_days;
 } vd_weather_t;
-typedef struct { char ssid[33]; int8_t rssi; bool secure; } vd_net_t;
+typedef struct { char ssid[33]; int8_t rssi; bool secure, saved; } vd_net_t;   // saved: remembered (wifi_svc)
 typedef struct { bool connected, scanning, failed; char joining[33]; vd_net_t nets[WIFI_MAX_NETS]; uint8_t n_nets; } vd_wifi_t;
 typedef struct { char name[24]; uint8_t addr[6]; uint8_t addr_type; int8_t rssi; } vd_cand_t;
 typedef enum { OTA_IDLE, OTA_RECEIVING, OTA_DONE, OTA_FAILED } vd_ota_state_t;
