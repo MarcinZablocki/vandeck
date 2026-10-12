@@ -72,27 +72,62 @@ default (`VanDeck > OTA upload key`).
 
 ## Apple Home (Matter)
 
-The panel is a Matter accessory (`VanDeck > Matter`, on by default). In the Home app it shows up as:
+The panel is a Matter accessory (`VanDeck > Matter`, on by default). Apple Home has no tile for a plain number and
+shows one battery per accessory, so some values use stand-in device types. Home names the tiles generically, so
+rename them once after pairing:
 
-- **Battery 1** and **Battery 2**: temperature sensors. Open one for its charge (%), charging state and low battery
-  (warning at 20 %, critical at 10 %).
-- **Battery bank**: an electrical sensor with the bank's power, voltage and current. Power is positive while charging.
-  It appears in the Energy view on iOS 27.
+| # | Matter device | Rename to | Shows / does |
+|---|---|---|---|
+| 1 | Plug with power + energy metering | Battery bank | Power drawn from the bank (W, 0 while charging) and energy drawn (kWh), listed in the Energy view on iOS 27. Its switch is a stand-in that always reads on. Every tile's settings show the bank's charge, charging state and low battery (20 %, critical 10 %). |
+| 2, 3 | Dimmable lights | Battery 1, Battery 2 | Brightness = charge, on the tile. |
+| 4, 5 | Light sensors | Bank W, PV W | Lux = watts drawn from the bank, and PV power. |
+| 6 | Thermostat | Heater | Truma heating: Off / Heat, setpoint 5–30 °C, room temperature. |
+| 7 | Temperature sensor | Room | The CP Plus room temperature. |
+| 8 | Fan | Hot water | Boiler: Off / Low = Eco / High = Hot. |
+| 9 | Fan | Fan | Truma fan: Low = Eco / High = High. "Vent" isn't offered; the iNet box can't select it. |
+
+- Changes made in Home reach the heater within a second. Changes on the panel or the CP Plus show in Home within 10 s.
+- The stand-ins push back. Switching the bank plug or a battery light from Home is undone at the next update
+  (10 s). The battery lights still count as lights, though: "turn off all the lights" and scenes include them,
+  so leave them out of scenes. Turning the Truma fan off is undone too, because the Truma has no fan-off setting.
+- Sensor tiles (Bank W, PV W, Room) appear under Climate. Add them to Favourites to see them on the home screen.
+- Endpoints are numbered in creation order (`matter_svc.cpp`). Add new ones at the end, because a controller that's
+  already paired keeps the old numbers. Changing a device type means removing the panel from Home and adding it again.
 
 To pair, open Settings > Home and scan the QR code from the Home app (+ > Add Accessory), or type the setup code.
 The phone must be on the same Wi-Fi as the panel. Pairing runs over Wi-Fi only, because CHIP-over-BLE would take
-NimBLE away from the battery and charger scanning. Home warns that the accessory is uncertified, because it uses
-the CHIP test vendor ID and test attestation certificates. Choose to add it anyway.
+NimBLE away from the battery and charger scanning. Home warns that the accessory is uncertified (it uses the CHIP
+test vendor ID and test attestation certificates). Choose to add it anyway.
 
 - The setup code is random per panel. It's generated on first start and kept in NVS (`vd_mt`), so it survives
   restarts and unpairing. It is not the well-known CHIP test code, so nobody else on a campsite network can pair the panel first.
 - For remote access, Apple Home needs a home hub (HomePod or Apple TV) on the van's network.
 - Settings > Home > *Unpair* (tap twice) or `matter unpair` removes the panel from every home and restarts it.
   Removing it from its last home in the Home app reopens pairing without a restart.
-- CHIP's static state and heap are in PSRAM (`main/linker.lf`, `ESP_MATTER_MEM_ALLOC_MODE_EXTERNAL`). Statically it
-  adds about 5 KB of internal RAM and 0.7 MB of flash. Its use at run time hasn't been measured on the panel yet.
-- **Not yet verified on hardware:** CHIP's own mDNS responder running beside `vandeck.local` (both bind port 5353),
-  and what iOS 27 shows for a Power Source on a temperature sensor and for negative bank power.
+- Matter starts once the running image has confirmed itself (30 s), so a Matter problem can't roll back an update.
+  If a start ends in a panic or watchdog reset, the next start skips Matter (Settings > Home and `matter` say so)
+  until `matter retry`. Power cuts don't count.
+- CHIP's static state and heap are in PSRAM (`main/linker.lf`, `ESP_MATTER_MEM_ALLOC_MODE_EXTERNAL`). It adds about
+  5 KB of static internal RAM and 0.7 MB of flash.
+- CHIP's mDNS responder shares port 5353 with `vandeck.local`. That needs `espressif/mdns` in socket mode
+  (`MDNS_NETWORKING_SOCKET`), which sets `SO_REUSEADDR`. CHIP's packet buffers need `PBUF_POOL_BUFSIZE=1536`,
+  which is set in the top-level `CMakeLists.txt`. The 536-byte TCP MSS kept for the weak link would otherwise
+  make them too small for Matter.
+- Several clusters (temperature, illuminance, fan) are CHIP code-driven clusters. `attribute::update()` doesn't
+  reach them; `matter_svc.cpp` sets them through the cluster objects.
+
+### Test panel
+
+A second panel on its UART port (CH340, `/dev/cu.wchusbserial*`) with demo data makes Matter work quick to check:
+
+```bash
+mkdir -p build_demo && sed 's/^# CONFIG_VD_SIMULATE is not set/CONFIG_VD_SIMULATE=y/' sdkconfig > build_demo/sdkconfig
+idf.py -B build_demo -D SDKCONFIG=build_demo/sdkconfig -p /dev/cu.wchusbserial10 flash monitor
+```
+
+The USB-JTAG shell isn't on that port. To clear the crash guard there, erase NVS with
+`python -m esptool --chip esp32p4 -p /dev/cu.wchusbserial10 erase-region 0x9000 0x60000`. Both panels answer as
+`vandeck.local`, so use IP addresses while both are on the network.
 
 ## Shell
 
@@ -119,7 +154,7 @@ The panel's own commands work there and in the Wi-Fi console (`tools/console.sh`
 | `starlink` | power, reachability, dish statistics |
 | `net` | Wi-Fi network, RSSI, IP |
 | `ble` | paired devices: RSSI, last advert, reading age |
-| `matter [qr\|unpair]` | Apple Home pairing state and setup code; print the QR payload, or unpair from every home |
+| `matter [qr\|unpair\|retry]` | Apple Home pairing state and setup code; print the QR payload, unpair from every home, or start Matter again after a skipped start |
 | `screen [30s\|1m\|5m\|never\|wake]` | screen saver state; set the timeout or wake the screen |
 | `grep [-i] [-v] <pattern> [file]` | filter lines, e.g. `status \| grep -i batt` |
 
@@ -143,7 +178,7 @@ main/
   net/starlink.*       dish status over grpc-web, auto-off
   net/ota_svc.*        OTA over Wi-Fi: HTTP upload, mDNS, rollback confirmation
   net/status_api.*     GET /status: read-only JSON of the panel's state (same key as /ota)
-  net/matter_svc.*     Matter node for Apple Home: battery and bank endpoints, per-panel setup code, pairing state
+  net/matter_svc.*     Matter node for Apple Home: bank, batteries, PV, Truma controls; per-panel setup code, pairing
   net/log_svc.*        serial console over Wi-Fi (log mirror + commands, port 23)
   app/cli.*, app/shell.c  shell commands; BreezyBox on USB serial (falls back to esp_console)
   ble/ble_svc.*        NimBLE scanning, role-based pairing, stale detection

@@ -27,8 +27,8 @@ config VD_MATTER
     bool "Matter (Apple Home)"
     default y
     help
-        Expose the batteries as a Matter accessory: charge, charging state and temperature per battery, and the
-        bank's power for the Home app's Energy view. Pair from Settings > Apple Home. Pairing is over Wi-Fi only.
+        Make the panel a Matter accessory for Apple Home: battery charge, bank power and energy (Energy view), PV
+        power, and the Truma's heating, boiler and fan as controls. Pair from Settings > Home, over Wi-Fi only.
 
 config VD_BATT_CAPACITY_AH
     int "Capacity of one battery (Ah)"

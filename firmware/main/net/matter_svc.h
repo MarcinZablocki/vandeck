@@ -7,10 +7,10 @@
 extern "C" {
 #endif
 
-// Matter node for Apple Home (and any other Matter controller). Each battery is a temperature sensor with a Power
-// Source cluster (charge %, charging state, low battery, voltage); the bank is an electrical sensor whose power shows
-// in the iOS 27 Energy view. Pairing is over the network the panel is already on (no BLE: NimBLE stays VanDeck's),
-// with a setup code generated once per panel and kept in NVS.
+// Matter node for Apple Home (and any other Matter controller): the battery bank (charge, power, energy for the
+// iOS 27 Energy view), each battery's charge, bank and PV watts, and the Truma's heating, boiler and fan as controls.
+// The endpoint list is at the top of matter_svc.cpp. Pairing is over the network the panel is already on (no BLE:
+// NimBLE stays VanDeck's), with a setup code generated once per panel and kept in NVS.
 typedef enum { MT_OFF, MT_STARTING, MT_UNPAIRED, MT_PAIRED, MT_ERROR } vd_mt_state_t;
 
 void matter_svc_init(void);                 // once the running image is confirmed (main.c)
