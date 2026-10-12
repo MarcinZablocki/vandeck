@@ -8,7 +8,7 @@
 //   4, 5   Bank W, PV W: light sensors, lux = watts             } (see add_level)
 //   6      Heater: Truma thermostat (Off / Heat, setpoint, room temperature)
 //   7      Room temperature (the CP Plus's sensor) as its own tile
-//   8      Hot water: thermostat, Off / Heat, 40 C = Eco, 60 C = Hot
+//   8      Hot water: fan, Off / Low = Eco / High = Hot
 //   9      Fan: Low = Eco, High = High
 //
 // Pairing is on-network only. The panel is already on Wi-Fi, so Matter doesn't need BLE, and leaving CHIPoBLE off
@@ -214,15 +214,6 @@ static esp_err_t on_attr(attribute::callback_type_t type, uint16_t ep, uint32_t 
     if (ep == s_ep_heat) {
         if (mode) truma_set_power(heat);
         else if (sp) truma_set_setpoint(v->val.i16 / 100.0f);
-    } else if (ep == s_ep_water) {
-        // Boiler on comes back at the temperature last chosen; a new temperature while it's off only selects it.
-        static uint8_t s_last = WATER_ECO;
-        if (g_cfg.water != WATER_OFF) s_last = g_cfg.water;
-        if (mode) truma_set_water(heat ? s_last : WATER_OFF);
-        else if (sp) {
-            s_last = v->val.i16 >= 5000 ? WATER_HOT : WATER_ECO;
-            if (g_cfg.water != WATER_OFF) truma_set_water(s_last);
-        }
     }
     return ESP_OK;
 }
@@ -260,9 +251,8 @@ static uint16_t add_watts(node_t *node)
     return endpoint::get_id(ep);
 }
 
-// Truma: heating and the boiler as thermostats (Off / Heat). Heating: setpoint 5..30 C, the CP Plus's range. Boiler:
-// setpoint 40 C = Eco, 60 C = Hot, the Truma's water temperatures; anything else goes to the nearer one. Apple Home
-// doesn't show Matter's Water Heater device type.
+// Truma heating as a thermostat: Off / Heat, setpoint 5..30 C (the CP Plus's range), room temperature. The boiler is a
+// fan (see TrumaFan): Apple Home shows neither Matter's Water Heater type nor setpoints above ~38 C.
 static uint16_t add_thermostat(node_t *node, float setpoint_c, int16_t min_c100, int16_t max_c100)
 {
     endpoint::thermostat::config_t tc;
@@ -289,8 +279,7 @@ static uint16_t add_thermostat(node_t *node, float setpoint_c, int16_t min_c100,
 
 static void set(uint16_t ep, uint32_t cl, uint32_t at, esp_matter_attr_val_t v);
 
-// Absolute limits first: the min/max ones are checked against them. The order of min and max depends on which way
-// the range moves (the boiler's 40..60 lies above the default 30).
+// Absolute limits first: the min/max ones are checked against them.
 static void set_limits(uint16_t ep, int16_t min_c100, int16_t max_c100)
 {
     namespace TA = Thermostat::Attributes;
@@ -308,28 +297,37 @@ static void set_limits(uint16_t ep, int16_t min_c100, int16_t max_c100)
     dump("after");
 }
 
-// Fan: the Truma's fan setting. Low = Eco, High = High; "Vent" (fan only) is left out, the iNet box can't select it.
-// Fan Control is code-driven: Home's changes arrive through this delegate, the panel's go in through the cluster.
+// Fan Control is code-driven: Home's changes arrive through the delegate, the panel's go in through the cluster.
+// The Truma's "Vent" (fan only) is left out: the iNet box can't select it.
 namespace FC = FanControl;
 
+// Two fans: the Truma's fan (Low = Eco, High = High; Off is undone at the next update) and the boiler (Off / Low = Eco /
+// High = Hot), Apple Home's closest thing to a three-way mode switch.
 class TrumaFan : public FC::Delegate {
 public:
-    TrumaFan() : FC::Delegate(chip::kInvalidEndpointId) {}
+    explicit TrumaFan(bool boiler) : FC::Delegate(chip::kInvalidEndpointId), m_boiler(boiler) {}
     chip::Protocols::InteractionModel::Status HandleStep(FC::StepDirectionEnum, bool, bool) override
     {
         return chip::Protocols::InteractionModel::Status::UnsupportedCommand;
     }
     void OnFanDriveStateChanged(const FC::FanDriveState &st) override
     {
-        if (st.mode == FC::FanModeEnum::kOff) return;   // no off: the next update puts it back
+        bool off = st.mode == FC::FanModeEnum::kOff || (!st.percentSetting.IsNull() && st.percentSetting.Value() == 0);
         bool high = !st.percentSetting.IsNull() ? st.percentSetting.Value() > 50
                                                 : st.mode == FC::FanModeEnum::kHigh || st.mode == FC::FanModeEnum::kOn;
-        uint8_t want = high ? FAN_HIGH : FAN_ECO;
-        if (g_cfg.fan != want) truma_set_fan(want);
+        if (m_boiler) {
+            uint8_t want = off ? WATER_OFF : high ? WATER_HOT : WATER_ECO;
+            if (g_cfg.water != want) truma_set_water(want);
+        } else if (!off) {
+            uint8_t want = high ? FAN_HIGH : FAN_ECO;
+            if (g_cfg.fan != want) truma_set_fan(want);
+        }
     }
+private:
+    bool m_boiler;
 };
 
-static TrumaFan s_fan;
+static TrumaFan s_fan(false), s_boiler(true);
 
 static uint16_t add_fan(node_t *node)
 {
@@ -341,14 +339,13 @@ static uint16_t add_fan(node_t *node)
     return endpoint::get_id(endpoint::fan::create(node, &fc, ENDPOINT_FLAG_NONE, nullptr));
 }
 
-static void set_fan(bool high)
+static void set_fan(uint16_t ep, FC::FanModeEnum m)
 {
     lock::ScopedChipStackLock lock(portMAX_DELAY);
     chip::app::ServerClusterInterface *c =
-        data_model::provider::get_instance().registry().Get(chip::app::ConcreteClusterPath(s_ep_fan, FC::Id));
+        data_model::provider::get_instance().registry().Get(chip::app::ConcreteClusterPath(ep, FC::Id));
     if (!c) return;
     auto *f = static_cast<FanControlCluster *>(c);
-    FC::FanModeEnum m = high ? FC::FanModeEnum::kHigh : FC::FanModeEnum::kLow;
     if (f->GetFanMode() != m) f->SetFanMode(m);
 }
 
@@ -457,12 +454,9 @@ static void push_truma(const vd_model_t *m)
     report(s_ep_heat, Thermostat::Id, TA::ThermostatRunningState::Id, esp_matter_bitmap16(h->heating ? 1 : 0));   // bit 0: heat
     set_temperature(s_ep_room, h->registered && !isnan(h->room_c) ? chip::app::DataModel::Nullable<int16_t>((int16_t)lroundf(h->room_c * 100))
                                                               : chip::app::DataModel::Nullable<int16_t>());
-    set_fan(g_cfg.fan == FAN_HIGH);
-    // Boiler: while off, the setpoint keeps the last temperature chosen.
-    if (g_cfg.water != WATER_OFF)
-        report(s_ep_water, Thermostat::Id, TA::OccupiedHeatingSetpoint::Id, esp_matter_int16(g_cfg.water == WATER_HOT ? 6000 : 4000));
-    report(s_ep_water, Thermostat::Id, TA::SystemMode::Id,
-           esp_matter_enum8((uint8_t)(g_cfg.water != WATER_OFF ? Thermostat::SystemModeEnum::kHeat : Thermostat::SystemModeEnum::kOff)));
+    set_fan(s_ep_fan, g_cfg.fan == FAN_HIGH ? FC::FanModeEnum::kHigh : FC::FanModeEnum::kLow);
+    set_fan(s_ep_water, g_cfg.water == WATER_OFF ? FC::FanModeEnum::kOff
+                        : g_cfg.water == WATER_HOT ? FC::FanModeEnum::kHigh : FC::FanModeEnum::kLow);
 }
 
 static void push_bank_source(const vd_model_t *m)
@@ -629,7 +623,7 @@ static void start_task(void *)
     s_ep_pv = add_watts(node);
     s_ep_heat = add_thermostat(node, g_cfg.setpoint_c, 500, 3000);
     s_ep_room = add_room(node);
-    s_ep_water = add_thermostat(node, g_cfg.water == WATER_HOT ? 60 : 40, 4000, 6000);
+    s_ep_water = add_fan(node);
     s_ep_fan = add_fan(node);
 
     STEP("stack");
@@ -645,6 +639,7 @@ static void start_task(void *)
         if (GetManualPairingCode(mc, rf) == CHIP_NO_ERROR) s_manual[mc.size()] = 0;
         count_fabrics();
         FanControl::SetDefaultDelegate(s_ep_fan, &s_fan);
+        FanControl::SetDefaultDelegate(s_ep_water, &s_boiler);
         // The energy cluster starts with an empty accuracy record; give it a real one.
         static AccRange s_erange;
         s_erange.rangeMin = 0;
@@ -659,7 +654,6 @@ static void start_task(void *)
         if (EEM::SetMeasurementAccuracy(s_ep_bank, acc) != CHIP_NO_ERROR) ESP_LOGW(TAG, "energy accuracy");
     }
     set_limits(s_ep_heat, 500, 3000);
-    set_limits(s_ep_water, 4000, 6000);
     STEP("started");
     ESP_LOGI(TAG, "up: %u endpoints; %u controller(s)", s_ep_fan, s_fabrics.load());
     xTaskCreate(update_task, "matter_upd", 4096, nullptr, 3, nullptr);
