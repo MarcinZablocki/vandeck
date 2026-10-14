@@ -76,6 +76,7 @@ static void startup(void *arg)
     // Matter only once the image is confirmed: it is the newest and heaviest part, and if it brings the panel down
     // the rest keeps running (matter_svc skips itself on the next start) instead of the whole update rolling back.
     matter_svc_init();
+    log_svc_boot_done();   // the serial port stops showing the log live: its shell is usable ('log' shows it)
     vTaskDelete(NULL);
 }
 

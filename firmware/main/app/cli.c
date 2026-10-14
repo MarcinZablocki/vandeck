@@ -1,4 +1,4 @@
-// Shell commands for reading what the panel knows (esp_console: USB serial and the Wi-Fi console).
+// Shell commands for reading what the panel knows (esp_console: the serial port and the Wi-Fi console).
 #include "cli.h"
 #include "model.h"
 #include "settings.h"
@@ -10,8 +10,11 @@
 #include "io/truma_lin.h"
 #include "io/gps.h"
 #include "net/update_svc.h"
+#include "net/log_svc.h"
 #include "esp_app_desc.h"
 #include "esp_console.h"
+#include "esp_log.h"
+#include "linenoise/linenoise.h"
 #include "esp_netif.h"
 #include "esp_wifi.h"
 #include "esp_heap_caps.h"
@@ -412,6 +415,38 @@ static int c_grep(int argc, char **argv)
     return hits ? 0 : 1;
 }
 
+// log: the kept log (what the Wi-Fi console replays), live output on the serial port, log levels.
+static int c_log(int argc, char **argv)
+{
+    static const char *LVL[] = { "none", "error", "warn", "info", "debug", "verbose" };
+    if (argc == 1) { log_svc_print(0); return 0; }
+    if (argc == 2 && atoi(argv[1]) > 0) { log_svc_print(atoi(argv[1])); return 0; }
+    if (!strcmp(argv[1], "live") && argc <= 3) {
+        if (argc == 3 && strcmp(argv[2], "on") && strcmp(argv[2], "off")) { printf("usage: log live [on|off]\n"); return 1; }
+        if (argc == 3) log_svc_set_live(!strcmp(argv[2], "on"));
+        printf("live log on the serial port: %s\n", log_svc_live() ? "on" : "off");
+        return 0;
+    }
+    for (int i = 0; argc == 3 && i < 6; i++) if (!strcasecmp(argv[2], LVL[i])) {
+        esp_log_level_set(argv[1], (esp_log_level_t)i);
+        printf("log level of '%s' set to %s\n", argv[1], LVL[i]);
+        return 0;
+    }
+    printf("usage: log [lines] | log live [on|off] | log <tag|*> <none|error|warn|info|debug|verbose>\n");
+    return 1;
+}
+
+// term: the serial shell's line editing. Plain (the default) never waits on the terminal; smart has history,
+// arrow keys and Tab, but asks the terminal for its cursor position and hangs until it answers.
+static int c_term(int argc, char **argv)
+{
+    if (argc == 2 && (!strcmp(argv[1], "smart") || !strcmp(argv[1], "plain"))) linenoiseSetDumbMode(!strcmp(argv[1], "plain"));
+    else if (argc > 1) { printf("usage: term [smart|plain]\n"); return 1; }
+    printf("serial line editing: %s\n", linenoiseIsDumbMode() ? "plain (any terminal; 'term smart' for history and Tab)"
+                                                             : "smart (needs a terminal that answers cursor queries)");
+    return 0;
+}
+
 static const esp_console_cmd_t CMDS[] = {
     { .command = "grep",     .help = "Print lines containing a pattern (-i ignore case, -v invert); reads a file or a pipe", .hint = "[-i] [-v] <pattern> [file]", .func = c_grep },
     { .command = "screen",   .help = "Screen saver: show state, set timeout (30s|1m|5m|never) or 'wake'", .hint = "[30s|1m|5m|never|wake]", .func = c_screen },
@@ -428,6 +463,8 @@ static const esp_console_cmd_t CMDS[] = {
     { .command = "matter",   .help = "Apple Home (Matter): pairing state and setup code; 'qr' prints the QR payload, 'unpair' forgets every home, 'retry' after a skipped start", .hint = "[qr|unpair|retry]", .func = c_matter },
     { .command = "relay",    .help = "Cloudflare relay (remote website): state; on|off, 'url <wss://...>', 'key <secret>'", .hint = "[on|off|url <u>|key <k>]", .func = c_relay },
     { .command = "ble",      .help = "Paired BLE devices: signal, last seen, reading age, read success counters", .hint = "[reset]", .func = c_ble },
+    { .command = "log",      .help = "The kept log (last 32 KB, survives resets); 'log 50' the last 50 lines; 'live on|off' streams it on the serial port; '<tag|*> <level>' sets a log level", .hint = "[lines|live [on|off]|<tag|*> <level>]", .func = c_log },
+    { .command = "term",     .help = "Serial line editing: plain (any terminal, the default) or smart (history, arrows, Tab; the terminal must answer cursor queries)", .hint = "[smart|plain]", .func = c_term },
 };
 
 const esp_console_cmd_t *cli_cmds(size_t *n) { *n = sizeof CMDS / sizeof *CMDS; return CMDS; }

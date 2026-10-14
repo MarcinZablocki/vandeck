@@ -48,11 +48,11 @@ tools/console.sh            # or: tools/console.sh 10.0.45.162
 telnet vandeck.local        # any telnet client works too: type the OTA key at the prompt
 ```
 
-You get the last 32 KB of log output, then live output: the same text UART0 prints, which still works too.
-The first line sent must be the OTA key, which the script sends for you. Telnet clients are fine: the panel
-refuses their option requests (so they stay in line mode with local echo; the key shows as you type it), takes
-CR, LF, CR LF or CR NUL as Enter, and sends CR LF line ends. Ctrl-D on an empty line leaves, like `quit`. Commands: `help`, `version`,
-`heap`, `log <tag|*> <level>` (e.g. `log lin debug`), `reboot`, `quit`. One client at a time on TCP port 23.
+You get the last 32 KB of log output, then live output. The first line sent must be the OTA key, which the script
+sends for you. Telnet clients are fine: the panel refuses their option requests (so they stay in line mode with
+local echo; the key shows as you type it), takes CR, LF, CR LF or CR NUL as Enter, and sends CR LF line ends.
+Ctrl-D on an empty line leaves, like `quit`. Commands: the shell's (see Shell, e.g. `log lin debug` for a log
+level), plus `version`, `heap`, `tasks`, `reboot`, `quit`. One client at a time on TCP port 23.
 
 ## Remote access
 
@@ -140,7 +140,7 @@ mkdir -p build_demo && sed 's/^# CONFIG_VD_SIMULATE is not set/CONFIG_VD_SIMULAT
 idf.py -B build_demo -D SDKCONFIG=build_demo/sdkconfig -p /dev/cu.wchusbserial10 flash monitor
 ```
 
-The USB-JTAG shell isn't on that port. To clear the crash guard there, erase NVS with
+That port has the shell too (see Shell). To clear the crash guard there, erase NVS with
 `python -m esptool --chip esp32p4 -p /dev/cu.wchusbserial10 erase-region 0x9000 0x60000`. Both panels answer as
 `vandeck.local`, so use IP addresses while both are on the network.
 
@@ -204,11 +204,26 @@ high-water mark, so the stack can be trimmed once it has run with a real module 
 
 ## Shell
 
-On the **USB serial port** the panel runs [BreezyBox](https://components.espressif.com/components/valdanylchuk/breezybox),
-a BusyBox-style shell (`ls`, `cat`, pipes, redirects, history, tab completion, `free`, `df`, `wifi`, ...). Its
-files live on the `storage` LittleFS partition, which only exists after a USB flash of the current partition table.
-Without that partition the panel falls back to plain console commands. The Wi-Fi console runs its input
-through the same shell, so `ls`, `df`, `cat` and redirects work there too.
+On the **serial port** (UART0 through the CH340 `/dev/cu.wchusbserial*`, 115200 baud; the USB-JTAG port shows the
+same output) the panel runs [BreezyBox](https://components.espressif.com/components/valdanylchuk/breezybox),
+a BusyBox-style shell (`ls`, `cat`, pipes, redirects, `free`, `df`, `wifi`, ...). Its files live on the `storage`
+LittleFS partition, which only exists after a USB flash of the current partition table. Without that partition the
+panel falls back to plain console commands. The Wi-Fi console runs its input through the same shell, so `ls`,
+`df`, `cat` and redirects work there too.
+
+```bash
+python -m serial.tools.miniterm /dev/cu.wchusbserial10 115200    # or screen, or idf.py -p ... monitor
+```
+
+The serial port shows the log live during start-up, then stops (about 35 s in, after Matter starts) so commands
+can be typed without the log running through them; a note says so. `log` prints the kept log (the last 32 KB, the
+same buffer the Wi-Fi console replays, crash notes included), `log 50` its last 50 lines, `log live on|off` streams
+it again or stops it, `log <tag|*> <level>` sets a log level. Panics still print on the port as they happen.
+
+Line editing on the serial port is plain by default: echo, backspace, Enter. The full editor (history, arrow keys,
+Tab completion) asks the terminal for its cursor position and waits for the answer, so with nothing attached at boot
+it hung and swallowed everything typed later. `term smart` switches it on for a terminal that answers (miniterm,
+screen, `idf.py monitor`, PuTTY); `term plain` goes back.
 
 Shell scripting is on (`CONFIG_BREEZYBOX_SHELL_SCRIPTING`): pipes (through temp files on the storage partition),
 variables, `$((...))`, `&&`/`||`, `if`/`for`/`while`, globbing. For example `status | grep -i batt` or
@@ -233,6 +248,8 @@ The panel's own commands work there and in the Wi-Fi console (`tools/console.sh`
 | `matter [qr\|unpair\|retry]` | Apple Home pairing state and setup code; print the QR payload, unpair from every home, or start Matter again after a skipped start |
 | `screen [30s\|1m\|5m\|never\|wake]` | screen saver state; set the timeout or wake the screen |
 | `grep [-i] [-v] <pattern> [file]` | filter lines, e.g. `status \| grep -i batt` |
+| `log [lines\|live [on\|off]\|<tag\|*> <level>]` | the kept log (last 32 KB) or its last lines; live log on the serial port on/off; set a log level |
+| `term [smart\|plain]` | serial line editing: plain (default) or smart (history, arrows, Tab) |
 
 ## Screen saver
 
@@ -257,7 +274,7 @@ main/
   net/relay_svc.*      outbound WebSocket to the Cloudflare relay: status out, heater commands in
   net/matter_svc.*     Matter node for Apple Home: bank, batteries, PV, Truma controls; per-panel setup code, pairing
   net/log_svc.*        serial console over Wi-Fi (log mirror + commands, port 23)
-  app/cli.*, app/shell.c  shell commands; BreezyBox on USB serial (falls back to esp_console)
+  app/cli.*, app/shell.c  shell commands; BreezyBox on the serial port (falls back to esp_console)
   ble/ble_svc.*        NimBLE scanning, role-based pairing, stale detection
   ble/gatt_link.*      small GATT-client helper (connect, discover, notify, read, write)
   ble/victron.*        instant-readout decrypt (AES-CTR, PSA crypto)

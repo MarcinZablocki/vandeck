@@ -40,6 +40,7 @@ static portMUX_TYPE s_mux = portMUX_INITIALIZER_UNLOCKED;
 static SemaphoreHandle_t s_fmt_lock;       // guards s_fmt (log calls can come from any task)
 static char s_fmt[512];
 static vprintf_like_t s_uart;              // the original log writer (UART0)
+static volatile bool s_live = true;        // the log also goes to UART0 (false after start-up, see 'log live')
 static TaskHandle_t s_task;
 
 static void ring_put(const char *d, size_t n)
@@ -83,7 +84,7 @@ static int log_hook(const char *fmt, va_list args)
 {
     va_list copy;
     va_copy(copy, args);
-    int r = s_uart(fmt, args);
+    int r = s_live ? s_uart(fmt, args) : 0;
     // Never block a logging task: if another task is formatting right now, this line only goes to UART.
     if (xSemaphoreTake(s_fmt_lock, 0) == pdTRUE) {
         int n = vsnprintf(s_fmt, sizeof s_fmt, fmt, copy);
@@ -107,6 +108,40 @@ void log_svc_capture(void)
         ring_put(M, sizeof M - 1);
     }
     s_uart = esp_log_set_vprintf(log_hook);
+}
+
+void log_svc_boot_done(void)
+{
+    if (!s_ring || !s_live) return;
+    printf("\n--- start-up done: the log stops here on the serial port. 'log' shows it (also 'log 50'), 'log live on'\n"
+           "--- streams it again, 'help' lists the commands. Press Enter for a prompt.\n");
+    fflush(stdout);
+    s_live = false;
+}
+
+void log_svc_set_live(bool on) { if (s_ring) s_live = on; }
+bool log_svc_live(void) { return s_live; }
+
+void log_svc_print(int lines)
+{
+    if (!s_ring) { printf("no kept log\n"); return; }
+    portENTER_CRITICAL(&s_mux);
+    uint64_t total = s_keep.total;
+    portEXIT_CRITICAL(&s_mux);
+    uint64_t pos = total > RING_SZ ? total - RING_SZ : 0;
+    // The last 'lines' lines start after the lines-th newline from the end (the final one doesn't count).
+    for (uint64_t p = total, n = 0; lines > 0 && p > pos; p--)
+        if (p != total && s_ring[(p - 1) % RING_SZ] == '\n' && ++n == (uint64_t)lines) { pos = p; break; }
+    char b[512];
+    while (pos < total) {
+        portENTER_CRITICAL(&s_mux);
+        if (s_keep.total - pos > RING_SZ) pos = s_keep.total - RING_SZ;   // overwritten meanwhile
+        size_t k = 0;
+        while (pos < total && k < sizeof b) b[k++] = s_ring[pos++ % RING_SZ];
+        portEXIT_CRITICAL(&s_mux);
+        fwrite(b, 1, k, stdout);
+    }
+    fflush(stdout);
 }
 
 static void say(int fd, const char *fmt, ...)
@@ -181,8 +216,6 @@ static int send_crlf(int fd, const char *b, size_t n, char *prev)
     return n > start && send(fd, b + start, n - start, 0) < 0 ? -1 : 0;
 }
 
-static const char *LVL[] = { "none", "error", "warn", "info", "debug", "verbose" };
-
 // Shell commands (esp_console) print to stdout. stdout is per task in ESP-IDF, so point this task's stdout at the
 // socket for the duration of the command.
 static int sock_write(void *cookie, const char *b, int n)
@@ -223,7 +256,7 @@ static void command(int fd, char *cmd)
             if (arg && strcmp(arg, c[i].command)) continue;
             say(fd, "  %-9s %s\r\n", c[i].command, c[i].help);
         }
-        if (!arg) say(fd, "  console:  version | heap | tasks | log <tag|*> <none|error|warn|info|debug|verbose> | reboot | quit\r\n"
+        if (!arg) say(fd, "  console:  version | heap | tasks | reboot | quit\r\n"
                           "  'help <command>' for one command. The USB serial port has the full BreezyBox shell.\r\n");
     } else if (!strcmp(cmd, "version")) {
         const esp_app_desc_t *d = esp_app_get_description();
@@ -247,15 +280,6 @@ static void command(int fd, char *cmd)
             for (char *l = strtok(b, "\n"); l; l = strtok(NULL, "\n")) say(fd, "%s\r\n", l);
             free(b);
         }
-    } else if (!strcmp(cmd, "log") && arg) {
-        char *lv = strchr(arg, ' ');
-        if (lv) *lv++ = 0;
-        for (int i = 0; lv && i < 6; i++) if (!strcasecmp(lv, LVL[i])) {
-            esp_log_level_set(arg, (esp_log_level_t)i);
-            say(fd, "log level of '%s' set to %s\r\n", arg, LVL[i]);
-            return;
-        }
-        say(fd, "usage: log <tag|*> <none|error|warn|info|debug|verbose>\r\n");
     } else if (!strcmp(cmd, "reboot")) {
         say(fd, "rebooting\r\n");
         vTaskDelay(pdMS_TO_TICKS(200));
