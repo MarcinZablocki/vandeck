@@ -5,7 +5,7 @@
 #include "starlink.h"
 #include "app/model.h"
 #include "app/settings.h"
-#include "ble/shelly.h"
+#include "ble/relay.h"
 #include "esp_http_client.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -202,7 +202,7 @@ void starlink_init(void) { xTaskCreate(task, "starlink", 6144, NULL, 3, NULL); }
 
 void starlink_set_power(bool on)
 {
-    if (g_cfg.dev[ROLE_SHELLY].paired) { shelly_set_output(on); return; }
+    if (g_cfg.dev[ROLE_RELAY].paired) { relay_set_output(on); return; }
     model_lock();
     M.sl.power = on;
     M.sl.power_since_us = on ? now_us() : 0;

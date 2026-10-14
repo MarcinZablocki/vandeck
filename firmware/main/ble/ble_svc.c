@@ -2,7 +2,7 @@
 #include "ble_svc.h"
 #include "victron.h"
 #include "litime.h"
-#include "shelly.h"
+#include "relay.h"
 #include "gatt_link.h"
 #include "app/settings.h"
 #include "esp_log.h"
@@ -95,7 +95,7 @@ static void on_adv(const adv_t *d)
 
     if (M.pair.active) {
         if (victron) pair_offer(d, name, DEVT_VICTRON);
-        else if (!strncmp(name, "Shelly", 6)) pair_offer(d, name, DEVT_SHELLY);
+        else if (!strcmp(name, "VanRelay")) pair_offer(d, name, DEVT_RELAY);
         else if (name[0] && is_litime(name, &f)) pair_offer(d, name, DEVT_LITIME);
     }
     for (int r = 0; r < ROLE_COUNT; r++) {
@@ -104,7 +104,7 @@ static void on_adv(const adv_t *d)
         s_rssi[r] = d->rssi; s_seen_us[r] = now_us(); s_adv_n[r]++;
         if (r == ROLE_SOLAR && victron) victron_on_adv(f.mfg_data, f.mfg_data_len);
         else if (r == ROLE_BATT1 || r == ROLE_BATT2) litime_on_seen(r - ROLE_BATT1, &d->addr);
-        else if (r == ROLE_SHELLY) shelly_on_seen(&d->addr);
+        else if (r == ROLE_RELAY) relay_on_seen(&d->addr);
     }
 }
 
@@ -162,17 +162,17 @@ void ble_pair_select(int idx, const uint8_t key[16], const char *pin)
     M.dev_state[r] = DEV_PAIRING;
     M.pair.active = false;
     if (r == ROLE_SOLAR) M.solar.valid = false;
-    else if (r != ROLE_SHELLY) M.batt[r - ROLE_BATT1].valid = false;
+    else if (r != ROLE_RELAY) M.batt[r - ROLE_BATT1].valid = false;
     model_commit();
     settings_save_later();
-    if (r == ROLE_SHELLY) shelly_refresh();
+    if (r == ROLE_RELAY) relay_refresh();
     scan_restart();
 }
 
 void ble_forget(vd_role_t r)
 {
     if (r == ROLE_BATT1 || r == ROLE_BATT2) litime_forget(r - ROLE_BATT1);
-    if (r == ROLE_SHELLY) shelly_forget();
+    if (r == ROLE_RELAY) relay_forget();
     model_lock();
     memset(&g_cfg.dev[r], 0, sizeof g_cfg.dev[r]);
     M.dev_state[r] = DEV_NONE;
@@ -180,7 +180,7 @@ void ble_forget(vd_role_t r)
     settings_save_later();
 }
 
-// Marks devices stale and drives periodic Shelly polling.
+// Marks devices stale and drives periodic relay polling.
 static void housekeep(void *a)
 {
     gl_watchdog();
@@ -192,7 +192,7 @@ static void housekeep(void *a)
         M.dev_state[ROLE_SOLAR] = DEV_LOST;
     }
     model_commit();
-    if (++n % 12 == 0 && g_cfg.dev[ROLE_SHELLY].paired) shelly_refresh();   // every 60 s
+    if (++n % 12 == 0 && g_cfg.dev[ROLE_RELAY].paired) relay_refresh();   // every 60 s
 }
 
 static void on_sync(void)
@@ -230,7 +230,7 @@ void ble_svc_init(void)
     model_commit();
 
     litime_init();
-    shelly_init();
+    relay_init();
     esp_timer_create_args_t a = { .callback = pair_scan_done, .name = "pair" };
     esp_timer_create(&a, &s_pair_t);
     esp_timer_create_args_t sc = { .callback = scan_timer_cb, .name = "ble_scan" };

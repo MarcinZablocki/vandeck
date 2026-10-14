@@ -44,7 +44,7 @@ static int chr_cb(uint16_t conn, const struct ble_gatt_error *err, const struct 
     if (err->status == BLE_HS_EDONE) {
         ESP_LOGI(TAG, "discovery done (notify handle %u)", l->notify_chr >= 0 ? l->h[l->notify_chr] : 0);
         if (l->notify_chr >= 0 && l->h[l->notify_chr]) {
-            uint8_t v[2] = { 1, 0 };   // CCCD assumed directly after the value handle (true for LiTime/Shelly)
+            uint8_t v[2] = { 1, 0 };   // CCCD assumed directly after the value handle (true for LiTime)
             ble_gattc_write_flat(conn, l->h[l->notify_chr] + 1, v, 2, NULL, NULL);
         }
         l->up = true;

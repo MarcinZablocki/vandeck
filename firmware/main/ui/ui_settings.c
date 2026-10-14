@@ -272,7 +272,7 @@ static void build_devices(lv_obj_t *p)
 
 static void refresh_devices(const vd_model_t *m)
 {
-    static const char *TYPE[] = { "Victron", "LiTime battery", "Shelly" };
+    static const char *TYPE[] = { "Victron", "LiTime battery", "Starlink relay" };
     const vd_pair_t *pr = &m->pair;
     w_show(dv_main, !pr->active); w_show(dv_pick, pr->active);
     int on = 0;
