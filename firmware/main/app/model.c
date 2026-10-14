@@ -24,7 +24,7 @@ int64_t now_us(void) { return esp_timer_get_time(); }
 
 vd_devtype_t role_type(vd_role_t r)
 {
-    return r == ROLE_SOLAR ? DEVT_VICTRON : r == ROLE_SHELLY ? DEVT_SHELLY : DEVT_LITIME;
+    return r == ROLE_SOLAR ? DEVT_VICTRON : r == ROLE_RELAY ? DEVT_RELAY : DEVT_LITIME;
 }
 const char *role_name(vd_role_t r)
 {

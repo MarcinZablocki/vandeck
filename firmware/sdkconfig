@@ -1301,6 +1301,8 @@ CONFIG_PARTITION_TABLE_MD5=y
 # default:
 CONFIG_VD_OTA_KEY="vandeck"
 # default:
+CONFIG_VD_RELAY_KEY="vandeck-relay"
+# default:
 CONFIG_VD_UPDATE_REPO="MarcinZablocki/vandeck"
 # CONFIG_VD_MATTER is not set
 # default:

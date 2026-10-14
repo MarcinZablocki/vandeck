@@ -279,7 +279,7 @@ main/
   ble/gatt_link.*      small GATT-client helper (connect, discover, notify, read, write)
   ble/victron.*        instant-readout decrypt (AES-CTR, PSA crypto)
   ble/litime.*         LiTime BMS polling
-  ble/shelly.*         Shelly Gen2 RPC over BLE (Switch.Set / GetStatus)
+  ble/relay.*          Starlink relay node over BLE (see ../relay)
   io/truma_lin.*       LIN master primitives + sniff mode
   io/tanks.*           KIB probes: digital lines or ADC, read on demand
   io/gps.*             GPS module on UART2: NMEA GGA/RMC, UBX aiding, track log on LittleFS
@@ -301,6 +301,6 @@ These are things I couldn't confirm from the docs. Each one is marked `VERIFY` o
 ## Behaviour notes
 
 - **Pairing:** each role (solar charger, battery 1, battery 2, Starlink power) takes one device. The scan only lists devices of that role's type, and hides devices already assigned to another role.
-- **Tanks:** read on demand only. Probes are powered for about a second, and the reading stays on screen for `tank_show_sec` (default 30 s, 0 = keep).
+- **Tanks:** the six KIB probe lines (LPG and grey, 1/3, 2/3, F) come in through optocouplers (HY-M154 modules) on GPIOs, an ADC ladder, or an I2C expander (`KIB tank sensors > I2C`: MCP23017 or PCF8574 at 0x20, port A/P0..P5, LPG on bits 0..2 and grey on 3..5, on the touch bus or its own). Read on demand only. Probes are powered for about a second, and the reading stays on screen for `tank_show_sec` (default 30 s, 0 = keep).
 - **Solar log:** adds up changes in the controller's yield counter, so energy lands on the right local day even though the counter resets after dark, not at midnight.
 - **Settings:** saved to NVS 2 s after the last change.

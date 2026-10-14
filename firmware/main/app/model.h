@@ -3,8 +3,8 @@
 #include <stdint.h>
 #include <math.h>
 
-typedef enum { ROLE_SOLAR, ROLE_BATT1, ROLE_BATT2, ROLE_SHELLY, ROLE_COUNT } vd_role_t;
-typedef enum { DEVT_VICTRON, DEVT_LITIME, DEVT_SHELLY } vd_devtype_t;
+typedef enum { ROLE_SOLAR, ROLE_BATT1, ROLE_BATT2, ROLE_RELAY, ROLE_COUNT } vd_role_t;
+typedef enum { DEVT_VICTRON, DEVT_LITIME, DEVT_RELAY } vd_devtype_t;
 typedef enum { DEV_NONE, DEV_PAIRING, DEV_ON, DEV_LOST } vd_devstate_t;
 typedef enum { STAGE_OFF, STAGE_BULK, STAGE_ABS, STAGE_FLOAT, STAGE_OTHER } vd_stage_t;
 enum { WATER_OFF, WATER_ECO, WATER_HOT };

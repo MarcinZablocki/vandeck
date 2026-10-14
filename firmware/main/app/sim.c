@@ -42,7 +42,7 @@ static void tick(void *arg)
         b->temp_c = i ? 14.5f : 15.0f;
         b->valid = true; b->ts_us = t;
     }
-    if (!g_cfg.dev[ROLE_SHELLY].paired && M.sl.power) {
+    if (!g_cfg.dev[ROLE_RELAY].paired && M.sl.power) {
         demo = true;
         bool online = t - M.sl.power_since_us > 20LL * 1000000;
         if (online && !M.sl.reachable) M.sl.online_since_us = t;
@@ -57,7 +57,7 @@ static void tick(void *arg)
             if (M.sl.hist_n < SL_HIST_LEN) M.sl.hist_n++;
             M.sl.heating = heat;
         }
-    } else if (!g_cfg.dev[ROLE_SHELLY].paired) { M.sl.reachable = false; M.sl.hist_n = 0; }
+    } else if (!g_cfg.dev[ROLE_RELAY].paired) { M.sl.reachable = false; M.sl.hist_n = 0; }
     // GPS: a parked van near the weather location while no module talks (demo fixes never move the weather or clock).
     if (!M.gps.present || M.gps.demo) {
         demo = true;

@@ -1,0 +1,45 @@
+menu "VanRelay"
+
+config RELAY_GPIO
+    int "Relay driver GPIO to the relay module IN pin"
+    default 25
+    help
+        Wired straight to the module IN pin. Avoid the strapping pins (0, 2, 12, 15).
+
+choice RELAY_TRIGGER
+    prompt "Relay module trigger"
+    default RELAY_ACTIVE_HIGH
+    help
+        Must match the H/L jumper on the relay module. With the jumper on H the module closes when IN is high
+        (3.3 V from the ESP32 is enough on the 5 V module). On L it closes when IN is pulled low; the GPIO is then
+        driven open-drain, so "off" releases the pin instead of driving 3.3 V against the module's pull-up.
+    config RELAY_ACTIVE_HIGH
+        bool "Active high (jumper on H)"
+    config RELAY_ACTIVE_LOW
+        bool "Active low (jumper on L)"
+endchoice
+
+config RELAY_KEY
+    string "Shared key"
+    default "vandeck-relay"
+    help
+        Must equal VD_RELAY_KEY in the panel firmware (max 16 characters). Writes without it are refused.
+
+choice RELAY_BOOT
+    prompt "State after power-up"
+    default RELAY_BOOT_LAST
+    config RELAY_BOOT_LAST
+        bool "Restore the last state"
+    config RELAY_BOOT_OFF
+        bool "Off"
+    config RELAY_BOOT_ON
+        bool "On"
+endchoice
+
+config RELAY_LINK_LOSS_OFF_MIN
+    int "Switch off after this many minutes without the panel (0 = never)"
+    default 0
+    help
+        The panel polls the relay about every minute. Set this to power Starlink down if the panel is gone.
+
+endmenu
