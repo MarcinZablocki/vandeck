@@ -5,7 +5,7 @@ idf_component_register(
        "app/model.c" "app/settings.c" "app/solar_log.c" "app/sim.c" "app/cli.c" "app/shell.c"
        "net/wifi_svc.c" "net/time_svc.c" "net/starlink.c" "net/ota_svc.c" "net/log_svc.c" "net/status_api.c" "net/matter_svc.cpp" "net/relay_svc.c" "net/weather.c" "net/update_svc.c"
        "ble/ble_svc.c" "ble/gatt_link.c" "ble/victron.c" "ble/litime.c" "ble/shelly.c"
-       "io/truma_lin.c" "io/truma_errors.c" "io/tanks.c"
+       "io/truma_lin.c" "io/truma_errors.c" "io/tanks.c" "io/gps.c"
        "ui/ui.c" "ui/ui_widgets.c" "ui/img_logo.c" "ui/ui_energy.c" "ui/ui_solar.c" "ui/ui_tanks.c"
        "ui/ui_starlink.c" "ui/ui_settings.c" "ui/ui_entry.c" "ui/ui_weather.c"
        ${FONT_SRCS}
@@ -14,7 +14,7 @@ idf_component_register(
   REQUIRES nvs_flash esp_netif esp_event esp_timer esp_http_client esp_lcd
            esp_driver_gpio esp_driver_uart esp_driver_ledc esp_driver_i2c esp_adc
            esp_wifi bt mbedtls esp_http_server app_update lwip console vfs
-           json espressif__esp_matter espressif__esp_websocket_client
+           json espressif__esp_matter espressif__esp_websocket_client joltwallet__littlefs
 )
 # log_svc.c copies the panic reason into its reset-proof log ring before the normal panic handler runs.
 target_link_libraries(${COMPONENT_LIB} INTERFACE "-Wl,--wrap=esp_panic_handler")

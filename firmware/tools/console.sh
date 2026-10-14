@@ -1,5 +1,5 @@
 #!/bin/sh
-# Serial console over Wi-Fi: recent log, live output and commands (type 'help').
+# Serial console over Wi-Fi: recent log, live output and commands (type 'help'). 'telnet <host>' works too.
 #   tools/console.sh [host]       host defaults to vandeck.local (or set VANDECK_HOST); Ctrl-C to leave
 cd "$(dirname "$0")/.."
 HOST="${1:-${VANDECK_HOST:-vandeck.local}}"

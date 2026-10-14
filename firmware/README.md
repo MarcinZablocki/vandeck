@@ -7,7 +7,7 @@ ESP-IDF 6.0 + LVGL 9 firmware for the **Elecrow CrowPanel Advanced 7" ESP32-P4**
 ```bash
 cd firmware
 idf.py set-target esp32p4
-idf.py menuconfig        # VanDeck menu: LIN pins, tank wiring, demo mode
+idf.py menuconfig        # VanDeck menu: LIN pins, GPS pins, tank wiring, demo mode
 idf.py build flash monitor
 ```
 
@@ -45,11 +45,14 @@ idf.py build && tools/ota.sh            # or: tools/ota.sh 10.0.45.162
 
 ```bash
 tools/console.sh            # or: tools/console.sh 10.0.45.162
+telnet vandeck.local        # any telnet client works too: type the OTA key at the prompt
 ```
 
-You get the last 32 KB of log output, then live output: the same text UART0 prints, which still works too.
-The first line sent must be the OTA key, which the script sends for you. Commands: `help`, `version`,
-`heap`, `log <tag|*> <level>` (e.g. `log lin debug`), `reboot`, `quit`. One client at a time on TCP port 23.
+You get the last 32 KB of log output, then live output. The first line sent must be the OTA key, which the script
+sends for you. Telnet clients are fine: the panel refuses their option requests (so they stay in line mode with
+local echo; the key shows as you type it), takes CR, LF, CR LF or CR NUL as Enter, and sends CR LF line ends.
+Ctrl-D on an empty line leaves, like `quit`. Commands: the shell's (see Shell, e.g. `log lin debug` for a log
+level), plus `version`, `heap`, `tasks`, `reboot`, `quit`. One client at a time on TCP port 23.
 
 ## Remote access
 
@@ -137,17 +140,90 @@ mkdir -p build_demo && sed 's/^# CONFIG_VD_SIMULATE is not set/CONFIG_VD_SIMULAT
 idf.py -B build_demo -D SDKCONFIG=build_demo/sdkconfig -p /dev/cu.wchusbserial10 flash monitor
 ```
 
-The USB-JTAG shell isn't on that port. To clear the crash guard there, erase NVS with
+That port has the shell too (see Shell). To clear the crash guard there, erase NVS with
 `python -m esptool --chip esp32p4 -p /dev/cu.wchusbserial10 erase-region 0x9000 0x60000`. Both panels answer as
 `vandeck.local`, so use IP addresses while both are on the network.
 
+## GPS
+
+A u-blox NMEA module (developed with a GT-U7, u-blox 7) on the expansion header, ported from the GPS-A devkit sketch.
+It gives the weather its location (ahead of the Starlink dish, then a location set by hand), sets the clock while
+SNTP hasn't (no internet; automatic time on), keeps a track log, and shows on the remote website's GPS tab and in
+`/status` (`gps` and `location`). The panel's own screens only show it as the weather location ("GPS").
+
+Wiring (3.3 V logic only; the module's own 3.3 V regulator is fine on 3.3 V too):
+
+| Module | CrowPanel header |
+|---|---|
+| VCC | a spare 3.3 V pin (one of the three feeds the LIN transceiver's SLP) |
+| GND | GND |
+| TX | IO50 (`VD_GPS_RX_GPIO`) |
+| RX | IO49 (`VD_GPS_TX_GPIO`; -1 = listen only, no aiding) |
+
+`VanDeck > GPS` in menuconfig: `VD_GPS` (on by default; without a module it just reports no data), UART port
+(`VD_GPS_UART_NUM`, 2; UART0 is the console, UART1 the LIN bus), the two pins, and `VD_GPS_BAUD` (9600, the
+module's default). If the fix never comes, `gps raw` shows what arrives: nothing at all means the module's TX isn't
+on IO50 (swap the two wires or the two settings); garbage means the baud rate is wrong.
+
+With the module's RX wired the panel also helps it to a faster first fix, as GPS-A did, and so that it starts
+with usable orbits after hours off (broadcast ephemeris is only good for about 4 h, and in the wall shaft of a metal
+van downloading a fresh one can take a long time):
+
+- AssistNow Autonomous (AOP) is switched on at every start (UBX-CFG-NAVX5; the module keeps it in RAM only). From
+  the broadcast ephemeris it works out orbits that stay usable for about 3 days (u-blox's default error limit),
+  offline;
+- at start-up, once SNTP has the time (or after 2 minutes without), UBX-AID-INI with the time and the last known
+  position (the weather location), skipped if the module already has a fix;
+- every 30 minutes with a fix, it reads the ionosphere/UTC, almanac, ephemeris and AOP data back from the module
+  (AID-HUI, AID-ALM, AID-EPH, AID-AOP without its optional part) into `/root/gps/aid.bin`, and replays them at the
+  next start after AID-INI: ephemeris only while under 4 h old, AOP under 3 days, almanac up to 30 days. AOP needs
+  the full date and time and AID-HUI to work (u-blox 7 receiver description, AssistNow Autonomous), so without the
+  time nothing is replayed;
+- optionally AssistNow Online (`VD_GPS_ASSISTNOW`, off by default): with internet at start-up it fetches GPS
+  ephemeris, almanac, ionosphere, time and position (`GetOnlineData.ashx?...;gnss=gps;datatype=pos,eph,alm,aux;
+  format=aid`, the u-blox 7 form) from `online-live1.services.u-blox.com` and forwards the frames before AID-INI;
+  of the saved data only AOP is replayed then. It needs a token from u-blox's legacy AssistNow Online/Offline
+  service: `gps assistnow <token>` keeps it in NVS (`vd_gps`, never printed, never in the repository),
+  `gps assistnow off` clears it. u-blox stopped issuing these tokens when Live/Predictive Orbits came (that service
+  only sends UBX-MGA, which u-blox 7 doesn't understand), and existing developer tokens are to be switched off in
+  2028, so this only helps with a token you already have.
+
+`gps` (and the GPS block in Settings > About) shows what the module got at start-up, the last fix ("none since
+start-up" when there hasn't been one), and how old the saved aiding is, with the reason: saved before this start-up
+(the panel was off) or no fix since (saves only happen with a fix). It also shows whether AssistNow Autonomous is on
+and how many satellites the module has AOP orbits for (UBX-NAV-AOPSTATUS, every 5 min). AOP data builds up over a
+day of fixes: the satellites over the van now are mostly not the ones up there 12 hours later.
+
+The track is one CSV per UTC day, `/root/gps/t/YYYYMMDD.csv` (`time,lat,lon,alt,sats,hdop,kmh`). It gets a point only
+after a real move: at least 10 m or 8 × HDOP, at most one every 30 s, HDOP 5 or better. When the storage partition
+has under 256 KB free, the oldest days are deleted. Read it with `ls /root/gps/t` and `cat` in the shell. Both
+files need the `storage` partition (see Shell).
+
+Internal RAM: a 5 KB task stack and the 1 KB UART buffer; the parser lives in PSRAM. `gps` prints the stack
+high-water mark, so the stack can be trimmed once it has run with a real module for a while.
+
 ## Shell
 
-On the **USB serial port** the panel runs [BreezyBox](https://components.espressif.com/components/valdanylchuk/breezybox),
-a BusyBox-style shell (`ls`, `cat`, pipes, redirects, history, tab completion, `free`, `df`, `wifi`, ...). Its
-files live on the `storage` LittleFS partition, which only exists after a USB flash of the current partition table.
-Without that partition the panel falls back to plain console commands. The Wi-Fi console runs its input
-through the same shell, so `ls`, `df`, `cat` and redirects work there too.
+On the **serial port** (UART0 through the CH340 `/dev/cu.wchusbserial*`, 115200 baud; the USB-JTAG port shows the
+same output) the panel runs [BreezyBox](https://components.espressif.com/components/valdanylchuk/breezybox),
+a BusyBox-style shell (`ls`, `cat`, pipes, redirects, `free`, `df`, `wifi`, ...). Its files live on the `storage`
+LittleFS partition, which only exists after a USB flash of the current partition table. Without that partition the
+panel falls back to plain console commands. The Wi-Fi console runs its input through the same shell, so `ls`,
+`df`, `cat` and redirects work there too.
+
+```bash
+python -m serial.tools.miniterm /dev/cu.wchusbserial10 115200    # or screen, or idf.py -p ... monitor
+```
+
+The serial port shows the log live during start-up, then stops (about 35 s in, after Matter starts) so commands
+can be typed without the log running through them; a note says so. `log` prints the kept log (the last 32 KB, the
+same buffer the Wi-Fi console replays, crash notes included), `log 50` its last 50 lines, `log live on|off` streams
+it again or stops it, `log <tag|*> <level>` sets a log level. Panics still print on the port as they happen.
+
+Line editing on the serial port is plain by default: echo, backspace, Enter. The full editor (history, arrow keys,
+Tab completion) asks the terminal for its cursor position and waits for the answer, so with nothing attached at boot
+it hung and swallowed everything typed later. `term smart` switches it on for a terminal that answers (miniterm,
+screen, `idf.py monitor`, PuTTY); `term plain` goes back.
 
 Shell scripting is on (`CONFIG_BREEZYBOX_SHELL_SCRIPTING`): pipes (through temp files on the storage partition),
 variables, `$((...))`, `&&`/`||`, `if`/`for`/`while`, globbing. For example `status | grep -i batt` or
@@ -164,12 +240,16 @@ The panel's own commands work there and in the Wi-Fi console (`tools/console.sh`
 | `heater` | LIN link / registration, settings, room temperature |
 | `tanks` | LPG and grey water levels |
 | `starlink` | power, reachability, dish statistics |
+| `gps [raw [s]\|assistnow <token>\|off]` | fix, satellites, HDOP, speed, GPS time; UART counters, module version, aiding (start-up, last fix, saved data and why it's that old, AssistNow), today's track; `raw` prints the NMEA as it arrives (default 3 s, up to 10); `assistnow` sets the AssistNow Online token (`VD_GPS_ASSISTNOW` builds) |
+| `weather [refresh\|loc <lat> <lon>]` | forecast and where it's for (GPS, Starlink or by hand) |
 | `net` | Wi-Fi network, RSSI, IP |
 | `ble` | paired devices: RSSI, last advert, reading age |
 | `relay [on\|off\|url <u>\|key <k>]` | Cloudflare relay state; switch it, or set its URL and key |
 | `matter [qr\|unpair\|retry]` | Apple Home pairing state and setup code; print the QR payload, unpair from every home, or start Matter again after a skipped start |
 | `screen [30s\|1m\|5m\|never\|wake]` | screen saver state; set the timeout or wake the screen |
 | `grep [-i] [-v] <pattern> [file]` | filter lines, e.g. `status \| grep -i batt` |
+| `log [lines\|live [on\|off]\|<tag\|*> <level>]` | the kept log (last 32 KB) or its last lines; live log on the serial port on/off; set a log level |
+| `term [smart\|plain]` | serial line editing: plain (default) or smart (history, arrows, Tab) |
 
 ## Screen saver
 
@@ -187,14 +267,14 @@ main/
   app/solar_log.*      90-day daily solar log, recorded by the panel itself
   app/sim.*            demo data for any role that isn't paired (VD_SIMULATE)
   net/wifi_svc.*       Wi-Fi through the C6 (esp_wifi_remote)
-  net/time_svc.*       SNTP, POSIX time zones, manual set
+  net/time_svc.*       SNTP, POSIX time zones, manual set, GPS time while SNTP hasn't synced
   net/starlink.*       dish status over grpc-web, auto-off
   net/ota_svc.*        OTA over Wi-Fi: HTTP upload, mDNS, rollback confirmation
   net/status_api.*     GET /status: read-only JSON of the panel's state (same key as /ota)
   net/relay_svc.*      outbound WebSocket to the Cloudflare relay: status out, heater commands in
   net/matter_svc.*     Matter node for Apple Home: bank, batteries, PV, Truma controls; per-panel setup code, pairing
   net/log_svc.*        serial console over Wi-Fi (log mirror + commands, port 23)
-  app/cli.*, app/shell.c  shell commands; BreezyBox on USB serial (falls back to esp_console)
+  app/cli.*, app/shell.c  shell commands; BreezyBox on the serial port (falls back to esp_console)
   ble/ble_svc.*        NimBLE scanning, role-based pairing, stale detection
   ble/gatt_link.*      small GATT-client helper (connect, discover, notify, read, write)
   ble/victron.*        instant-readout decrypt (AES-CTR, PSA crypto)
@@ -202,6 +282,7 @@ main/
   ble/shelly.*         Shelly Gen2 RPC over BLE (Switch.Set / GetStatus)
   io/truma_lin.*       LIN master primitives + sniff mode
   io/tanks.*           KIB probes: digital lines or ADC, read on demand
+  io/gps.*             GPS module on UART2: NMEA GGA/RMC, UBX aiding, track log on LittleFS
   ui/                  one file per screen; ui_widgets.* holds the palette and helpers
 ```
 

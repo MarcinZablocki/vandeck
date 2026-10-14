@@ -24,6 +24,7 @@ dependencies:
   espressif/mdns: "^1.8"                    # vandeck.local for OTA uploads
   espressif/esp_websocket_client: "^1.8"    # outbound link to the Cloudflare relay (net/relay_svc.c)
   valdanylchuk/breezybox: "^1.1.1"          # BusyBox-style shell on the USB serial port (needs the littlefs partition)
+  joltwallet/littlefs: "^1.20"              # (BreezyBox brings it) io/gps.c asks it for free space
   # Matter node for Apple Home (net/matter_svc.cpp). 1.6.0 targets IDF 5.5 but builds on 6.0.1 (two warnings relaxed
   # in the top-level CMakeLists.txt). Pairing is on-network: CHIPoBLE is off, NimBLE stays ble_svc's.
   espressif/esp_matter:

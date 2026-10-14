@@ -1,4 +1,4 @@
-// Shell: BreezyBox (BusyBox-style: files, pipes, redirects, history) on the USB serial port, with the panel's own
+// Shell: BreezyBox (BusyBox-style: files, pipes, redirects, history) on the serial port, with the panel's own
 // commands added. Without the 'storage' LittleFS partition BreezyBox can't start; then plain esp_console runs the
 // same commands, and the Wi-Fi console still works.
 #include "cli.h"
@@ -6,6 +6,7 @@
 #include "driver/uart.h"
 #include "driver/uart_vfs.h"
 #include "esp_log.h"
+#include "linenoise/linenoise.h"
 #include <stdio.h>
 
 static bool s_breezy;
@@ -18,11 +19,14 @@ bool shell_start(void)
         uart_vfs_dev_port_set_rx_line_endings(UART_NUM_0, ESP_LINE_ENDINGS_CR);
         uart_vfs_dev_port_set_tx_line_endings(UART_NUM_0, ESP_LINE_ENDINGS_CRLF);
     }
+    // Plain line editing: the full editor asks the terminal for its cursor position and waits for the answer, so
+    // when nothing is attached at boot it hangs and swallows everything typed later. 'term smart' switches it on.
+    linenoiseSetDumbMode(1);
     size_t n;
     const esp_console_cmd_t *cmds = cli_cmds(&n);
     if (breezybox_start_stdio_ex(16384, 2, cmds, n) == ESP_OK) {   // 16 KB: scripting is stack-hungry
         s_breezy = true;
-        ESP_LOGI("shell", "BreezyBox shell on the USB serial port");
+        ESP_LOGI("shell", "BreezyBox shell on the serial port");
         return true;
     }
     ESP_LOGW("shell", "no 'storage' partition: BreezyBox unavailable, plain console commands only");

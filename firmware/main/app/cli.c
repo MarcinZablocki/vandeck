@@ -1,4 +1,4 @@
-// Shell commands for reading what the panel knows (esp_console: USB serial and the Wi-Fi console).
+// Shell commands for reading what the panel knows (esp_console: the serial port and the Wi-Fi console).
 #include "cli.h"
 #include "model.h"
 #include "settings.h"
@@ -8,9 +8,13 @@
 #include "net/relay_svc.h"
 #include "net/wifi_svc.h"
 #include "io/truma_lin.h"
+#include "io/gps.h"
 #include "net/update_svc.h"
+#include "net/log_svc.h"
 #include "esp_app_desc.h"
 #include "esp_console.h"
+#include "esp_log.h"
+#include "linenoise/linenoise.h"
 #include "esp_netif.h"
 #include "esp_wifi.h"
 #include "esp_heap_caps.h"
@@ -22,6 +26,7 @@
 #include <string.h>
 #include <strings.h>
 #include <time.h>
+#include <sys/stat.h>
 
 static vd_model_t *snap(void)
 {
@@ -141,10 +146,10 @@ static void print_relay(const vd_model_t *m)
 
 static void print_weather(const vd_model_t *m)
 {
-    static const char *SRC[] = { "none", "Starlink", "manual" };
+    static const char *SRC[] = { "none", "Starlink", "manual", "GPS" };
     static const char *ST[] = { "no location", "no network", "fetching", "ok", "fetch failed" };
     const vd_weather_t *w = &m->wx;
-    printf("weather: %s, location %s", ST[w->state], SRC[g_cfg.wx_src]);
+    printf("weather: %s, location %s", ST[w->state], SRC[g_cfg.wx_src & 3]);
     if (g_cfg.wx_src) printf(" %.4f, %.4f", g_cfg.wx_lat, g_cfg.wx_lon);
     const char *place, *country;
     if (weather_place(&place, &country)) printf(" near %s%s%s", place[0] ? place : "(no town)", country[0] ? ", " : "", country);
@@ -158,6 +163,62 @@ static void print_weather(const vd_model_t *m)
         printf("  day %d: %5.1f / %5.1f C, %-18s rain %3u %%, sun %.2f kWh/m2 -> ~%.2f kWh\n", i, d->tmin, d->tmax,
                weather_text(d->code), d->pop, d->rad_kwh_m2, weather_expected_kwh(d->rad_kwh_m2));
     }
+}
+
+static const char *compass(float deg)
+{
+    static const char *P[] = { "N", "NE", "E", "SE", "S", "SW", "W", "NW" };
+    return P[(int)lroundf(deg / 45) & 7];
+}
+
+static void print_gps(const vd_model_t *m)
+{
+    gps_info_t i;
+    gps_info(&i);
+    const vd_gps_t *g = &m->gps;
+    if (!i.enabled && !g->demo) { printf("gps: off (VanDeck > GPS in menuconfig)\n"); return; }
+    if (g->fix) {
+        printf("gps: %.6f, %.6f  alt %.0f m  %u satellites  HDOP %.1f", g->lat, g->lon, g->alt_m, g->sats, g->hdop);
+        if (g->kmh >= 2) printf("  %.0f km/h %s", g->kmh, compass(g->course));
+        if (g->demo) printf("  (demo)");
+        printf("\n");
+    } else if (g->present) printf("gps: no fix yet, %u satellites in use\n", g->sats);
+    else printf("gps: no data from the module\n");
+    if (!g->fix && g->fix_at_us) printf("  last fix %.6f, %.6f, %lds ago\n", g->lat, g->lon, age_s(g->fix_at_us));
+    if (g->utc) {
+        time_t u = (time_t)g->utc; struct tm tm; char b[24];
+        gmtime_r(&u, &tm); strftime(b, sizeof b, "%Y-%m-%d %H:%M:%S", &tm);
+        printf("  GPS time %s UTC\n", b);
+    }
+    if (!i.enabled) return;
+    printf("  UART RX GPIO %d, TX GPIO %d, %d baud: %lu bytes, %lu sentences, %lu bad checksums\n", i.rx_gpio, i.tx_gpio,
+           i.baud, (unsigned long)i.bytes, (unsigned long)i.sentences, (unsigned long)i.bad);
+    if (i.sw[0]) printf("  module: u-blox SW %s, HW %s\n", i.sw, i.hw);
+    else if (i.tx) printf("  module: no answer to UBX-MON-VER yet%s\n", i.sentences ? " (check the wire to its RX)" : "");
+    printf("  aiding at start-up: %s\n", i.aid);
+    char b[120];
+    if (g->fix) printf("  last fix: now\n");
+    else if (i.fix_unix) { gps_fmt_age(time(NULL) - i.fix_unix, b, sizeof b); printf("  last fix: %s ago\n", b); }
+    else if (i.boot_unix) { gps_fmt_age(time(NULL) - i.boot_unix, b, sizeof b); printf("  last fix: none since start-up %s ago\n", b); }
+    else printf("  last fix: none since start-up\n");
+    gps_aid_note(&i, b, sizeof b);
+    if (i.aid_saved) printf("  saved aiding: %d frames (%d AOP), %s\n", i.aid_frames, i.aop_frames, b);
+    else if (i.tx) printf("  saved aiding: none yet (saved every 30 min with a fix)\n");
+    if (i.tx) {
+        printf("  AssistNow Autonomous: %s", i.aop > 0 ? "on" : i.aop == 0 ? "refused by the module" : "not set yet");
+        if (i.aop_sats >= 0) printf(", orbits for %d satellites", i.aop_sats);
+        printf("\n");
+    }
+    if (i.online) printf("  AssistNow Online: %s\n", i.online_token ? i.online_st : "no token ('gps assistnow <token>')");
+    if (!i.fs) printf("  no 'storage' partition: no track log or saved ephemeris\n");
+    else {
+        time_t now = time(NULL); struct tm tm; char p[48]; struct stat st;
+        gmtime_r(&now, &tm);
+        snprintf(p, sizeof p, GPS_TRACK_DIR "/%04d%02d%02d.csv", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday);
+        if (stat(p, &st) == 0) printf("  track today: %s, %ld bytes\n", p, (long)st.st_size);
+        else printf("  track today: none yet (" GPS_TRACK_DIR "/YYYYMMDD.csv, UTC days)\n");
+    }
+    printf("  task stack free: %lu bytes\n", (unsigned long)i.stack_free);
 }
 
 static void print_update(const vd_model_t *m)
@@ -188,7 +249,7 @@ static int run(printer_t p)
 
 static void print_all(const vd_model_t *m)
 {
-    print_batt(m); print_solar(m); print_heater(m); print_tanks(m); print_starlink(m); print_weather(m); print_wifi(m); print_matter(m); print_relay(m);
+    print_batt(m); print_solar(m); print_heater(m); print_tanks(m); print_starlink(m); print_gps(m); print_weather(m); print_wifi(m); print_matter(m); print_relay(m);
 }
 
 static int c_status(int c, char **v) { return run(print_all); }
@@ -197,6 +258,32 @@ static int c_solar(int c, char **v) { return run(print_solar); }
 static int c_heater(int c, char **v) { return run(print_heater); }
 static int c_tanks(int c, char **v) { return run(print_tanks); }
 static int c_starlink(int c, char **v) { return run(print_starlink); }
+static int c_gps(int argc, char **argv)
+{
+    if (argc > 1 && !strcmp(argv[1], "raw")) {
+        int s = argc > 2 ? atoi(argv[2]) : 3;
+        s = s < 1 ? 1 : s > 10 ? 10 : s;
+        char *b = heap_caps_malloc(4096, MALLOC_CAP_SPIRAM);
+        if (!b) return 1;
+        size_t n = gps_raw(b, 4096, s * 1000);
+        if (n) fwrite(b, 1, n, stdout); else printf("nothing received in %d s\n", s);
+        free(b);
+        return 0;
+    }
+#if CONFIG_VD_GPS_ASSISTNOW
+    if (argc == 3 && !strcmp(argv[1], "assistnow")) {
+        if (!gps_set_token(strcmp(argv[2], "off") ? argv[2] : "")) { printf("the token is 16..63 letters, digits, '-' or '_'\n"); return 1; }
+        printf(strcmp(argv[2], "off") ? "token saved, used at the next start\n" : "token cleared\n");
+        return 0;
+    }
+#endif
+#if CONFIG_VD_GPS_ASSISTNOW
+    if (argc > 1) { printf("usage: gps [raw [seconds] | assistnow <token>|off]\n"); return 1; }
+#else
+    if (argc > 1) { printf("usage: gps [raw [seconds]]\n"); return 1; }
+#endif
+    return run(print_gps);
+}
 static int c_wifi(int argc, char **argv)
 {
     if (argc > 2 && !strcmp(argv[1], "forget")) {
@@ -232,7 +319,7 @@ static int c_weather(int argc, char **argv)
         if (!strcmp(argv[1], "refresh")) { weather_refresh(); printf("fetching\n"); }
         else if (!strcmp(argv[1], "loc") && argc > 3) {
             if (!weather_set_location(strtof(argv[2], NULL), strtof(argv[3], NULL))) { printf("latitude -90..90, longitude -180..180\n"); return 1; }
-            printf("location set (Starlink's position replaces it once the dish reports one)\n");
+            printf("location set (a GPS fix or the Starlink dish's position replaces it)\n");
         } else { printf("usage: weather [refresh|loc <lat> <lon>]\n"); return 1; }
     }
     return run(print_weather);
@@ -328,21 +415,56 @@ static int c_grep(int argc, char **argv)
     return hits ? 0 : 1;
 }
 
+// log: the kept log (what the Wi-Fi console replays), live output on the serial port, log levels.
+static int c_log(int argc, char **argv)
+{
+    static const char *LVL[] = { "none", "error", "warn", "info", "debug", "verbose" };
+    if (argc == 1) { log_svc_print(0); return 0; }
+    if (argc == 2 && atoi(argv[1]) > 0) { log_svc_print(atoi(argv[1])); return 0; }
+    if (!strcmp(argv[1], "live") && argc <= 3) {
+        if (argc == 3 && strcmp(argv[2], "on") && strcmp(argv[2], "off")) { printf("usage: log live [on|off]\n"); return 1; }
+        if (argc == 3) log_svc_set_live(!strcmp(argv[2], "on"));
+        printf("live log on the serial port: %s\n", log_svc_live() ? "on" : "off");
+        return 0;
+    }
+    for (int i = 0; argc == 3 && i < 6; i++) if (!strcasecmp(argv[2], LVL[i])) {
+        esp_log_level_set(argv[1], (esp_log_level_t)i);
+        printf("log level of '%s' set to %s\n", argv[1], LVL[i]);
+        return 0;
+    }
+    printf("usage: log [lines] | log live [on|off] | log <tag|*> <none|error|warn|info|debug|verbose>\n");
+    return 1;
+}
+
+// term: the serial shell's line editing. Plain (the default) never waits on the terminal; smart has history,
+// arrow keys and Tab, but asks the terminal for its cursor position and hangs until it answers.
+static int c_term(int argc, char **argv)
+{
+    if (argc == 2 && (!strcmp(argv[1], "smart") || !strcmp(argv[1], "plain"))) linenoiseSetDumbMode(!strcmp(argv[1], "plain"));
+    else if (argc > 1) { printf("usage: term [smart|plain]\n"); return 1; }
+    printf("serial line editing: %s\n", linenoiseIsDumbMode() ? "plain (any terminal; 'term smart' for history and Tab)"
+                                                             : "smart (needs a terminal that answers cursor queries)");
+    return 0;
+}
+
 static const esp_console_cmd_t CMDS[] = {
     { .command = "grep",     .help = "Print lines containing a pattern (-i ignore case, -v invert); reads a file or a pipe", .hint = "[-i] [-v] <pattern> [file]", .func = c_grep },
     { .command = "screen",   .help = "Screen saver: show state, set timeout (30s|1m|5m|never) or 'wake'", .hint = "[30s|1m|5m|never|wake]", .func = c_screen },
-    { .command = "status",   .help = "Everything the panel knows: batteries, solar, heater, tanks, Starlink, Wi-Fi, Matter, relay", .func = c_status },
+    { .command = "status",   .help = "Everything the panel knows: batteries, solar, heater, tanks, Starlink, GPS, weather, Wi-Fi, Matter, relay", .func = c_status },
     { .command = "batt",     .help = "Battery readings (voltage, current, SOC, capacity, temperature)", .func = c_batt },
     { .command = "solar",    .help = "Solar charger: PV power, charge stage, battery side, yield", .func = c_solar },
     { .command = "heater",   .help = "Truma heater: LIN link, settings, room temperature", .func = c_heater },
     { .command = "tanks",    .help = "Tank levels (LPG, grey water)", .func = c_tanks },
     { .command = "starlink", .help = "Starlink power and dish statistics", .func = c_starlink },
+    { .command = "gps",      .help = "GPS fix, module link and aiding; 'raw [s]' shows the NMEA as it arrives (up to 10 s); 'assistnow <token>|off' with VD_GPS_ASSISTNOW", .hint = "[raw [seconds]|assistnow <token>|off]", .func = c_gps },
     { .command = "update",   .help = "Firmware updates from GitHub releases: show state; check, install, or set off|notify|auto", .hint = "[check|install|off|notify|auto]", .func = c_update },
     { .command = "weather",  .help = "Forecast and its location; 'loc <lat> <lon>' sets one by hand, 'refresh' fetches now", .hint = "[refresh|loc <lat> <lon>]", .func = c_weather },
     { .command = "net",      .help = "Wi-Fi in use and the remembered networks; 'forget <ssid>' drops one", .hint = "[forget <ssid>]", .func = c_wifi },
     { .command = "matter",   .help = "Apple Home (Matter): pairing state and setup code; 'qr' prints the QR payload, 'unpair' forgets every home, 'retry' after a skipped start", .hint = "[qr|unpair|retry]", .func = c_matter },
     { .command = "relay",    .help = "Cloudflare relay (remote website): state; on|off, 'url <wss://...>', 'key <secret>'", .hint = "[on|off|url <u>|key <k>]", .func = c_relay },
     { .command = "ble",      .help = "Paired BLE devices: signal, last seen, reading age, read success counters", .hint = "[reset]", .func = c_ble },
+    { .command = "log",      .help = "The kept log (last 32 KB, survives resets); 'log 50' the last 50 lines; 'live on|off' streams it on the serial port; '<tag|*> <level>' sets a log level", .hint = "[lines|live [on|off]|<tag|*> <level>]", .func = c_log },
+    { .command = "term",     .help = "Serial line editing: plain (any terminal, the default) or smart (history, arrows, Tab; the terminal must answer cursor queries)", .hint = "[smart|plain]", .func = c_term },
 };
 
 const esp_console_cmd_t *cli_cmds(size_t *n) { *n = sizeof CMDS / sizeof *CMDS; return CMDS; }

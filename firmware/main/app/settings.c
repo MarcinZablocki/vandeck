@@ -69,7 +69,7 @@ void settings_load(void)
             memcpy(&g_cfg, &tmp, sz);
             if (ver < 2) { g_cfg.screen_timeout = SCREEN_TO_5M; g_cfg.brightness = 80; }
             if (g_cfg.brightness < 10 || g_cfg.brightness > 100) g_cfg.brightness = 80;
-            if (g_cfg.wx_src > WX_SRC_MANUAL) g_cfg.wx_src = WX_SRC_NONE;
+            if (g_cfg.wx_src > WX_SRC_GPS) g_cfg.wx_src = WX_SRC_NONE;
             // v4 fields may sit in an older blob's tail padding, so set them rather than trust the copy
             if (ver < 4) { g_cfg.pv_w = CONFIG_VD_PV_ARRAY_W; g_cfg.pv_eff = CONFIG_VD_PV_PERF_PCT; }
             if (g_cfg.pv_w < 20 || g_cfg.pv_w > 2000) g_cfg.pv_w = CONFIG_VD_PV_ARRAY_W;

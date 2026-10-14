@@ -1,4 +1,6 @@
 // Network console: a log mirror plus a few commands, one client at a time on TCP port 23.
+// Works with nc (tools/console.sh) and with telnet clients: telnet option requests are refused and skipped, Enter
+// may come as CR, LF, CR LF or CR NUL, and output lines end in CR LF.
 #include "log_svc.h"
 #include "esp_log.h"
 #include "esp_heap_caps.h"
@@ -38,6 +40,7 @@ static portMUX_TYPE s_mux = portMUX_INITIALIZER_UNLOCKED;
 static SemaphoreHandle_t s_fmt_lock;       // guards s_fmt (log calls can come from any task)
 static char s_fmt[512];
 static vprintf_like_t s_uart;              // the original log writer (UART0)
+static volatile bool s_live = true;        // the log also goes to UART0 (false after start-up, see 'log live')
 static TaskHandle_t s_task;
 
 static void ring_put(const char *d, size_t n)
@@ -81,7 +84,7 @@ static int log_hook(const char *fmt, va_list args)
 {
     va_list copy;
     va_copy(copy, args);
-    int r = s_uart(fmt, args);
+    int r = s_live ? s_uart(fmt, args) : 0;
     // Never block a logging task: if another task is formatting right now, this line only goes to UART.
     if (xSemaphoreTake(s_fmt_lock, 0) == pdTRUE) {
         int n = vsnprintf(s_fmt, sizeof s_fmt, fmt, copy);
@@ -107,6 +110,40 @@ void log_svc_capture(void)
     s_uart = esp_log_set_vprintf(log_hook);
 }
 
+void log_svc_boot_done(void)
+{
+    if (!s_ring || !s_live) return;
+    printf("\n--- start-up done: the log stops here on the serial port. 'log' shows it (also 'log 50'), 'log live on'\n"
+           "--- streams it again, 'help' lists the commands. Press Enter for a prompt.\n");
+    fflush(stdout);
+    s_live = false;
+}
+
+void log_svc_set_live(bool on) { if (s_ring) s_live = on; }
+bool log_svc_live(void) { return s_live; }
+
+void log_svc_print(int lines)
+{
+    if (!s_ring) { printf("no kept log\n"); return; }
+    portENTER_CRITICAL(&s_mux);
+    uint64_t total = s_keep.total;
+    portEXIT_CRITICAL(&s_mux);
+    uint64_t pos = total > RING_SZ ? total - RING_SZ : 0;
+    // The last 'lines' lines start after the lines-th newline from the end (the final one doesn't count).
+    for (uint64_t p = total, n = 0; lines > 0 && p > pos; p--)
+        if (p != total && s_ring[(p - 1) % RING_SZ] == '\n' && ++n == (uint64_t)lines) { pos = p; break; }
+    char b[512];
+    while (pos < total) {
+        portENTER_CRITICAL(&s_mux);
+        if (s_keep.total - pos > RING_SZ) pos = s_keep.total - RING_SZ;   // overwritten meanwhile
+        size_t k = 0;
+        while (pos < total && k < sizeof b) b[k++] = s_ring[pos++ % RING_SZ];
+        portEXIT_CRITICAL(&s_mux);
+        fwrite(b, 1, k, stdout);
+    }
+    fflush(stdout);
+}
+
 static void say(int fd, const char *fmt, ...)
 {
     char b[256];
@@ -116,20 +153,68 @@ static void say(int fd, const char *fmt, ...)
     if (n > 0) send(fd, b, n < (int)sizeof b ? n : sizeof b - 1, 0);
 }
 
-// Read one line (telnet negotiation bytes and CR dropped). Returns length, 0 = nothing yet, -1 = closed.
-static int read_line(int fd, char *line, int cap, int *len)
+// One client: its socket, the line being typed and the telnet parser state.
+#define IAC 0xFF
+enum { T_DATA, T_IAC, T_OPT, T_SB, T_SB_IAC };
+typedef struct { int fd; char line[96]; int len; uint8_t t, verb; bool cr; } conn_t;
+
+// Telnet: refuse whatever the client offers (WILL -> DONT) or asks for (DO -> WONT), once per request; a refusal
+// needs no answer. Sub-negotiations (IAC SB ... IAC SE) are skipped. Returns true for a byte that is data.
+static bool telnet(conn_t *c, uint8_t b)
 {
-    char c;
-    int n = recv(fd, &c, 1, MSG_DONTWAIT);
-    if (n == 0) return -1;
-    if (n < 0) return (errno == EAGAIN || errno == EWOULDBLOCK) ? 0 : -1;
-    if ((uint8_t)c >= 0xF0 || c == '\r') return 0;   // IAC & co. from telnet clients
-    if (c == '\n') { line[*len] = 0; int l = *len; *len = 0; return l > 0 ? l : 0; }
-    if (*len < cap - 1) line[(*len)++] = c;
-    return 0;
+    switch (c->t) {
+    case T_IAC:
+        if (b == IAC) { c->t = T_DATA; return true; }               // IAC IAC = a 0xFF data byte
+        if (b >= 0xFB) { c->verb = b; c->t = T_OPT; }               // WILL, WONT, DO, DONT + option
+        else c->t = b == 0xFA ? T_SB : T_DATA;                      // SB, or a two-byte command (NOP, IP, ...)
+        return false;
+    case T_OPT:
+        if (c->verb == 0xFB || c->verb == 0xFD) {
+            uint8_t r[3] = { IAC, c->verb == 0xFB ? 0xFE : 0xFC, b };
+            send(c->fd, r, 3, 0);
+        }
+        c->t = T_DATA;
+        return false;
+    case T_SB: if (b == IAC) c->t = T_SB_IAC; return false;
+    case T_SB_IAC: c->t = b == 0xF0 ? T_DATA : T_SB; return false; // SE ends it
+    default:
+        if (b == IAC) { c->t = T_IAC; return false; }
+        return true;
+    }
 }
 
-static const char *LVL[] = { "none", "error", "warn", "info", "debug", "verbose" };
+// Read what has arrived. Returns the length of a finished line (in c->line), 0 = nothing yet, -1 = closed.
+static int read_line(conn_t *c)
+{
+    uint8_t b;
+    int n;
+    while ((n = recv(c->fd, &b, 1, MSG_DONTWAIT)) == 1) {
+        if (!telnet(c, b)) continue;
+        bool after_cr = c->cr;
+        c->cr = b == '\r';
+        if (b == '\r' || (b == '\n' && !after_cr)) { c->line[c->len] = 0; int l = c->len; c->len = 0; if (l) return l; continue; }
+        if (b == '\n' || b == 0) continue;                          // the LF or NUL after a CR
+        if (b == 0x04 && !c->len) return -1;                        // Ctrl-D on an empty line
+        if (b == 0x08 || b == 0x7F) { if (c->len) c->len--; continue; }
+        if (b >= ' ' && c->len < (int)sizeof c->line - 1) c->line[c->len++] = b;
+    }
+    if (n == 0) return -1;
+    return errno == EAGAIN || errno == EWOULDBLOCK ? 0 : -1;
+}
+
+// The log has bare LF line ends; a network terminal wants CR LF.
+static int send_crlf(int fd, const char *b, size_t n, char *prev)
+{
+    size_t start = 0;
+    for (size_t i = 0; i < n; i++) {
+        if (b[i] == '\n' && (i ? b[i - 1] : *prev) != '\r') {
+            if ((i > start && send(fd, b + start, i - start, 0) < 0) || send(fd, "\r", 1, 0) < 0) return -1;
+            start = i;
+        }
+    }
+    if (n) *prev = b[n - 1];
+    return n > start && send(fd, b + start, n - start, 0) < 0 ? -1 : 0;
+}
 
 // Shell commands (esp_console) print to stdout. stdout is per task in ESP-IDF, so point this task's stdout at the
 // socket for the duration of the command.
@@ -171,7 +256,7 @@ static void command(int fd, char *cmd)
             if (arg && strcmp(arg, c[i].command)) continue;
             say(fd, "  %-9s %s\r\n", c[i].command, c[i].help);
         }
-        if (!arg) say(fd, "  console:  version | heap | tasks | log <tag|*> <none|error|warn|info|debug|verbose> | reboot | quit\r\n"
+        if (!arg) say(fd, "  console:  version | heap | tasks | reboot | quit\r\n"
                           "  'help <command>' for one command. The USB serial port has the full BreezyBox shell.\r\n");
     } else if (!strcmp(cmd, "version")) {
         const esp_app_desc_t *d = esp_app_get_description();
@@ -195,15 +280,6 @@ static void command(int fd, char *cmd)
             for (char *l = strtok(b, "\n"); l; l = strtok(NULL, "\n")) say(fd, "%s\r\n", l);
             free(b);
         }
-    } else if (!strcmp(cmd, "log") && arg) {
-        char *lv = strchr(arg, ' ');
-        if (lv) *lv++ = 0;
-        for (int i = 0; lv && i < 6; i++) if (!strcasecmp(lv, LVL[i])) {
-            esp_log_level_set(arg, (esp_log_level_t)i);
-            say(fd, "log level of '%s' set to %s\r\n", arg, LVL[i]);
-            return;
-        }
-        say(fd, "usage: log <tag|*> <none|error|warn|info|debug|verbose>\r\n");
     } else if (!strcmp(cmd, "reboot")) {
         say(fd, "rebooting\r\n");
         vTaskDelay(pdMS_TO_TICKS(200));
@@ -215,11 +291,13 @@ static void command(int fd, char *cmd)
 
 static void serve(int fd)
 {
-    char line[96]; int len = 0, n;
+    static conn_t c;
+    c = (conn_t){ .fd = fd };
+    int n;
     say(fd, "VanDeck console. Key: ");
     int64_t until = esp_timer_get_time() + 30LL * 1000000;
-    while ((n = read_line(fd, line, sizeof line, &len)) == 0 && esp_timer_get_time() < until) vTaskDelay(pdMS_TO_TICKS(50));
-    if (n <= 0 || strcmp(line, CONFIG_VD_OTA_KEY)) { say(fd, "\r\nwrong key\r\n"); return; }
+    while ((n = read_line(&c)) == 0 && esp_timer_get_time() < until) vTaskDelay(pdMS_TO_TICKS(50));
+    if (n <= 0 || strcmp(c.line, CONFIG_VD_OTA_KEY)) { say(fd, "\r\nwrong key\r\n"); return; }
 
     const esp_app_desc_t *d = esp_app_get_description();
     say(fd, "\r\n%s %s - recent log follows, then live output. 'help' for commands.\r\n\r\n", d->project_name, d->version);
@@ -228,6 +306,7 @@ static void serve(int fd)
     portEXIT_CRITICAL(&s_mux);
 
     static char out[1024];
+    char prev = '\n';
     for (;;) {
         portENTER_CRITICAL(&s_mux);
         uint64_t total = s_keep.total;
@@ -237,12 +316,12 @@ static void serve(int fd)
         while (pos < total && k < sizeof out) out[k++] = s_ring[pos++ % RING_SZ];
         portEXIT_CRITICAL(&s_mux);
         if (dropped) say(fd, "\r\n[... output dropped, client too slow ...]\r\n");
-        if (k && send(fd, out, k, 0) < 0) return;
+        if (k && send_crlf(fd, out, k, &prev) < 0) return;
         if (pos < total) continue;
 
-        while ((n = read_line(fd, line, sizeof line, &len)) > 0) {
-            if (!strcmp(line, "quit") || !strcmp(line, "exit")) return;
-            command(fd, line);
+        while ((n = read_line(&c)) > 0) {
+            if (!strcmp(c.line, "quit") || !strcmp(c.line, "exit")) return;
+            command(fd, c.line);
         }
         if (n < 0) return;
         ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(200));

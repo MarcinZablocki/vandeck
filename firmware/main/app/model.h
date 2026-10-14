@@ -44,6 +44,15 @@ typedef struct {
     float temp, feels, wind_kmh; uint8_t code, humidity; bool day;
     vd_wx_hour_t hour[WX_HOURS]; vd_wx_day_t daily[WX_DAYS]; uint8_t n_hours, n_days;
 } vd_weather_t;
+// GPS module on the expansion header (io/gps.c). present = NMEA is arriving; fix = a position in the last few seconds
+// (fix_at_us = when lat/lon were last updated). utc = time of the last valid RMC (unix seconds, 0 = none).
+// demo = made-up values from app/sim.c: shown, but never used for the weather location or the clock.
+typedef struct {
+    bool present, fix, demo;
+    uint8_t sats; float hdop;
+    double lat, lon; float alt_m, kmh, course;
+    int64_t utc, fix_at_us;
+} vd_gps_t;
 typedef struct { char ssid[33]; int8_t rssi; bool secure, saved; } vd_net_t;   // saved: remembered (wifi_svc)
 typedef struct { bool connected, scanning, failed; char joining[33]; vd_net_t nets[WIFI_MAX_NETS]; uint8_t n_nets; } vd_wifi_t;
 typedef struct { char name[24]; uint8_t addr[6]; uint8_t addr_type; int8_t rssi; } vd_cand_t;
@@ -61,6 +70,7 @@ typedef struct {
     vd_tank_t tank[2];
     vd_starlink_t sl;
     vd_weather_t wx;
+    vd_gps_t gps;
     vd_wifi_t wifi;
     uint8_t dev_state[ROLE_COUNT];
     vd_pair_t pair;

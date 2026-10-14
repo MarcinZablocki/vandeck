@@ -3,6 +3,7 @@
 #include "settings.h"
 #include "esp_timer.h"
 #include "esp_random.h"
+#include <time.h>
 
 static esp_timer_handle_t s_t;
 static float rnd(void) { return (esp_random() & 0xFFFF) / 65535.0f; }
@@ -57,6 +58,14 @@ static void tick(void *arg)
             M.sl.heating = heat;
         }
     } else if (!g_cfg.dev[ROLE_SHELLY].paired) { M.sl.reachable = false; M.sl.hist_n = 0; }
+    // GPS: a parked van near the weather location while no module talks (demo fixes never move the weather or clock).
+    if (!M.gps.present || M.gps.demo) {
+        demo = true;
+        double la = g_cfg.wx_src ? g_cfg.wx_lat : 46.5935, lo = g_cfg.wx_src ? g_cfg.wx_lon : 7.9091;
+        M.gps = (vd_gps_t){ .present = true, .fix = true, .demo = true, .sats = 8 + (esp_random() % 4),
+                            .hdop = 0.8f + rnd() * 0.4f, .lat = la + (rnd() - 0.5f) * 2e-5, .lon = lo + (rnd() - 0.5f) * 2e-5,
+                            .alt_m = 796 + rnd() * 4, .kmh = rnd() * 0.6f, .course = 0, .utc = time(NULL), .fix_at_us = t };
+    }
     M.demo = demo;
     model_commit();
 }

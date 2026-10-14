@@ -64,7 +64,7 @@ const SECURITY = {
   "X-Content-Type-Options": "nosniff",
   "Referrer-Policy": "no-referrer",
   "X-Frame-Options": "DENY",
-  "Content-Security-Policy": "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'",
+  "Content-Security-Policy": "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-src https://www.openstreetmap.org; frame-ancestors 'none'",
 };
 
 export default {

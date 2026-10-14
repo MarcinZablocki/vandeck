@@ -15,6 +15,7 @@
 #include "net/weather.h"
 #include "net/update_svc.h"
 #include "net/matter_svc.h"
+#include "io/gps.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -488,6 +489,7 @@ static void refresh_display(void)
 // --- About
 static lv_obj_t *ab_ver, *ab_built, *ab_slot, *ab_upd, *ab_ip, *ab_up;
 static lv_obj_t *up_seg, *up_st, *up_hint, *up_check, *up_inst;
+static lv_obj_t *gp_sub, *gp_txt;
 static const char *UPD_MAP[] = { "Off", "Notify", "Automatic", "" };
 
 static void on_upd_mode(lv_event_t *e) { int i = w_seg_get(e); model_lock(); g_cfg.upd_mode = i; cfg_done(); }
@@ -528,6 +530,14 @@ static void build_about(lv_obj_t *p)
 
     lv_obj_t *fn = w_label(p, F_14, C_MUTED, "Update over Wi-Fi: tools/ota.sh  -  console: tools/console.sh (vandeck.local:23)");
     lv_obj_set_style_pad_top(fn, 8, 0);
+
+    // GPS diagnostics: what the 'gps' console command says about the fix and the aiding, in short
+    lv_obj_t *gc = w_col(p, 4);
+    lv_obj_set_width(gc, LV_PCT(100));
+    gp_sub = w_label(gc, F_16, C_TXT, "");
+    gp_txt = w_label(gc, F_14, C_TXT2, "");
+    lv_obj_set_width(gp_txt, LV_PCT(100));
+    lv_label_set_long_mode(gp_txt, LV_LABEL_LONG_WRAP);
     for (lv_obj_t **l = (lv_obj_t *[]){ ab_ver, ab_built, ab_upd, ab_slot, ab_ip, ab_up, NULL }; *l; l++)
         lv_obj_set_style_text_font(*l, F_18, 0);
 }
@@ -569,9 +579,39 @@ static void refresh_updates(const vd_model_t *m)
     w_btn_state(up_check, false, u->state != UPD_CHECKING && u->state != UPD_INSTALLING);
 }
 
+static void refresh_gps(const vd_model_t *m)
+{
+    gps_info_t i;
+    gps_info(&i);
+    const vd_gps_t *g = &m->gps;
+    if (!i.enabled && !g->demo) lv_label_set_text(gp_sub, "GPS: off (VanDeck > GPS in menuconfig)");
+    else if (g->fix) w_fmt(gp_sub, "GPS: fix, %u satellites, HDOP %.1f%s", g->sats, g->hdop, g->demo ? " (demo)" : "");
+    else if (g->present) w_fmt(gp_sub, "GPS: no fix yet, %u satellites in use", g->sats);
+    else lv_label_set_text(gp_sub, "GPS: no data from the module");
+    w_show(gp_txt, i.enabled);
+    if (!i.enabled) return;
+
+    char t[400], a[24], note[120];
+    int k;
+    if (g->fix) k = snprintf(t, sizeof t, "Last fix: now");
+    else if (i.fix_unix) { gps_fmt_age(time(NULL) - i.fix_unix, a, sizeof a); k = snprintf(t, sizeof t, "Last fix: %s ago", a); }
+    else k = snprintf(t, sizeof t, "Last fix: none since start-up");
+    if (i.tx) {
+        k += snprintf(t + k, sizeof t - k, "  -  Autonomous: %s", i.aop > 0 ? "on" : i.aop == 0 ? "refused by the module" : "not set yet");
+        if (i.aop_sats >= 0) k += snprintf(t + k, sizeof t - k, ", orbits for %d satellites", i.aop_sats);
+    }
+    if (i.online) k += snprintf(t + k, sizeof t - k, "  -  Online: %s", i.online_token ? i.online_st : "no token");
+    gps_aid_note(&i, note, sizeof note);
+    if (i.aid_saved) k += snprintf(t + k, sizeof t - k, "\nSaved: %d frames (%d AOP), %s", i.aid_frames, i.aop_frames, note);
+    else if (i.tx) k += snprintf(t + k, sizeof t - k, "\nSaved: none yet (every 30 min with a fix)");
+    snprintf(t + k, sizeof t - k, "\nAt start-up: %s", i.aid);
+    if (strcmp(lv_label_get_text(gp_txt), t)) lv_label_set_text(gp_txt, t);   // longer than w_fmt takes
+}
+
 static void refresh_about(const vd_model_t *m)
 {
     refresh_updates(m);
+    refresh_gps(m);
     const esp_app_desc_t *d = esp_app_get_description();
     lv_label_set_text(ab_ver, d->version);
     w_fmt(ab_built, "%s %.5s", d->date, d->time);

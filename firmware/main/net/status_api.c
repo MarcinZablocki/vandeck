@@ -2,6 +2,7 @@
 #include "ota_svc.h"
 #include "matter_svc.h"
 #include "relay_svc.h"
+#include "weather.h"
 #include "app/cli.h"
 #include "app/model.h"
 #include "app/settings.h"
@@ -37,6 +38,7 @@ static void num(jb_t *j, const char *k, float v, int dec)
 {
     if (isnan(v) || isinf(v)) add(j, "\"%s\":null,", k); else add(j, "\"%s\":%.*f,", k, dec, v);
 }
+static void dnum(jb_t *j, const char *k, double v, int dec) { add(j, "\"%s\":%.*f,", k, dec, v); }
 static void integer(jb_t *j, const char *k, long v) { add(j, "\"%s\":%ld,", k, v); }
 static void boolean(jb_t *j, const char *k, bool v) { add(j, "\"%s\":%s,", k, v ? "true" : "false"); }
 static void age(jb_t *j, int64_t ts)
@@ -115,6 +117,31 @@ size_t status_api_json(char *buf, size_t cap)
     const vd_starlink_t *sl = &m->sl;
     add(&j, "\"starlink\":{");
     boolean(&j, "power", sl->power); boolean(&j, "reachable", sl->reachable); boolean(&j, "heating", sl->heating);
+    end(&j, "},");
+
+    // GPS module (io/gps.c). lat/lon/alt_m/age_s describe the last fix, which may be old when fix is false.
+    const vd_gps_t *g = &m->gps;
+    add(&j, "\"gps\":{");
+    boolean(&j, "present", g->present); boolean(&j, "fix", g->fix); boolean(&j, "demo", g->demo);
+    integer(&j, "sats", g->sats);
+    if (g->present) num(&j, "hdop", g->hdop, 1);
+    if (g->fix_at_us) {
+        dnum(&j, "lat", g->lat, 6); dnum(&j, "lon", g->lon, 6); num(&j, "alt_m", g->alt_m, 0);
+        age(&j, g->fix_at_us);
+    }
+    if (g->fix) { num(&j, "kmh", g->kmh, 1); num(&j, "course", g->course, 0); }
+    if (g->utc) add(&j, "\"utc\":%lld,", (long long)g->utc);
+    end(&j, "},");
+
+    // Where the panel thinks the van is (the weather location): gps, starlink, manual or none.
+    static const char *SRC[] = { "none", "starlink", "manual", "gps" };
+    add(&j, "\"location\":{");
+    str(&j, "src", SRC[g_cfg.wx_src & 3]);
+    if (g_cfg.wx_src) {
+        num(&j, "lat", g_cfg.wx_lat, 4); num(&j, "lon", g_cfg.wx_lon, 4);
+        const char *place, *country;
+        if (weather_place(&place, &country)) { str(&j, "place", place); str(&j, "country", country); }
+    }
     end(&j, "},");
 
     add(&j, "\"wifi\":{");

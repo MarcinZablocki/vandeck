@@ -21,6 +21,7 @@
 #include "ble/ble_svc.h"
 #include "io/truma_lin.h"
 #include "io/tanks.h"
+#include "io/gps.h"
 #include "ui/ui.h"
 
 static void startup(void *arg)
@@ -56,6 +57,7 @@ static void startup(void *arg)
     ble_svc_init();
     truma_init();
     tanks_init();
+    gps_init();          // after shell_start: the track and saved ephemeris live on its LittleFS
     starlink_init();
     weather_init();
     update_svc_init();
@@ -74,6 +76,7 @@ static void startup(void *arg)
     // Matter only once the image is confirmed: it is the newest and heaviest part, and if it brings the panel down
     // the rest keeps running (matter_svc skips itself on the next start) instead of the whole update rolling back.
     matter_svc_init();
+    log_svc_boot_done();   // the serial port stops showing the log live: its shell is usable ('log' shows it)
     vTaskDelete(NULL);
 }
 

@@ -47,6 +47,20 @@ void time_svc_set_auto(bool on)
     else if (on && online) time_svc_on_network();
 }
 
+// GPS time (RMC) while SNTP hasn't synced: no internet, or not yet. Only with automatic time on, and only when the
+// clock is off by more than 2 s (RMC arrives a few hundred ms into the second it names).
+bool time_svc_set_from_gps(int64_t utc)
+{
+    model_lock(); bool sntp = M.time_synced; model_unlock();
+    if (!g_cfg.auto_time || sntp || utc < 1735689600) return false;
+    int64_t d = utc - (int64_t)time(NULL);
+    if (d >= -2 && d <= 2) return false;
+    struct timeval tv = { .tv_sec = (time_t)utc };
+    settimeofday(&tv, NULL);
+    model_lock(); model_commit();
+    return true;
+}
+
 bool time_valid(void) { return time(NULL) > 1735689600; }   // after 2025-01-01
 
 void time_svc_shift(int field, int delta)
