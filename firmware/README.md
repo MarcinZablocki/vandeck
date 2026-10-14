@@ -45,10 +45,13 @@ idf.py build && tools/ota.sh            # or: tools/ota.sh 10.0.45.162
 
 ```bash
 tools/console.sh            # or: tools/console.sh 10.0.45.162
+telnet vandeck.local        # any telnet client works too: type the OTA key at the prompt
 ```
 
 You get the last 32 KB of log output, then live output: the same text UART0 prints, which still works too.
-The first line sent must be the OTA key, which the script sends for you. Commands: `help`, `version`,
+The first line sent must be the OTA key, which the script sends for you. Telnet clients are fine: the panel
+refuses their option requests (so they stay in line mode with local echo; the key shows as you type it), takes
+CR, LF, CR LF or CR NUL as Enter, and sends CR LF line ends. Ctrl-D on an empty line leaves, like `quit`. Commands: `help`, `version`,
 `heap`, `log <tag|*> <level>` (e.g. `log lin debug`), `reboot`, `quit`. One client at a time on TCP port 23.
 
 ## Remote access
