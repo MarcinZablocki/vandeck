@@ -193,7 +193,20 @@ static void print_gps(const vd_model_t *m)
     if (i.sw[0]) printf("  module: u-blox SW %s, HW %s\n", i.sw, i.hw);
     else if (i.tx) printf("  module: no answer to UBX-MON-VER yet%s\n", i.sentences ? " (check the wire to its RX)" : "");
     printf("  aiding at start-up: %s\n", i.aid);
-    if (i.aid_saved) printf("  saved ephemeris/almanac: %d frames, %lld min old\n", i.aid_frames, (long long)(time(NULL) - i.aid_saved) / 60);
+    char b[120];
+    if (g->fix) printf("  last fix: now\n");
+    else if (i.fix_unix) { gps_fmt_age(time(NULL) - i.fix_unix, b, sizeof b); printf("  last fix: %s ago\n", b); }
+    else if (i.boot_unix) { gps_fmt_age(time(NULL) - i.boot_unix, b, sizeof b); printf("  last fix: none since start-up %s ago\n", b); }
+    else printf("  last fix: none since start-up\n");
+    gps_aid_note(&i, b, sizeof b);
+    if (i.aid_saved) printf("  saved aiding: %d frames (%d AOP), %s\n", i.aid_frames, i.aop_frames, b);
+    else if (i.tx) printf("  saved aiding: none yet (saved every 30 min with a fix)\n");
+    if (i.tx) {
+        printf("  AssistNow Autonomous: %s", i.aop > 0 ? "on" : i.aop == 0 ? "refused by the module" : "not set yet");
+        if (i.aop_sats >= 0) printf(", orbits for %d satellites", i.aop_sats);
+        printf("\n");
+    }
+    if (i.online) printf("  AssistNow Online: %s\n", i.online_token ? i.online_st : "no token ('gps assistnow <token>')");
     if (!i.fs) printf("  no 'storage' partition: no track log or saved ephemeris\n");
     else {
         time_t now = time(NULL); struct tm tm; char p[48]; struct stat st;
@@ -254,7 +267,18 @@ static int c_gps(int argc, char **argv)
         free(b);
         return 0;
     }
+#if CONFIG_VD_GPS_ASSISTNOW
+    if (argc == 3 && !strcmp(argv[1], "assistnow")) {
+        if (!gps_set_token(strcmp(argv[2], "off") ? argv[2] : "")) { printf("the token is 16..63 letters, digits, '-' or '_'\n"); return 1; }
+        printf(strcmp(argv[2], "off") ? "token saved, used at the next start\n" : "token cleared\n");
+        return 0;
+    }
+#endif
+#if CONFIG_VD_GPS_ASSISTNOW
+    if (argc > 1) { printf("usage: gps [raw [seconds] | assistnow <token>|off]\n"); return 1; }
+#else
     if (argc > 1) { printf("usage: gps [raw [seconds]]\n"); return 1; }
+#endif
     return run(print_gps);
 }
 static int c_wifi(int argc, char **argv)
@@ -397,7 +421,7 @@ static const esp_console_cmd_t CMDS[] = {
     { .command = "heater",   .help = "Truma heater: LIN link, settings, room temperature", .func = c_heater },
     { .command = "tanks",    .help = "Tank levels (LPG, grey water)", .func = c_tanks },
     { .command = "starlink", .help = "Starlink power and dish statistics", .func = c_starlink },
-    { .command = "gps",      .help = "GPS fix, module link and aiding; 'raw [s]' shows the NMEA as it arrives (up to 10 s)", .hint = "[raw [seconds]]", .func = c_gps },
+    { .command = "gps",      .help = "GPS fix, module link and aiding; 'raw [s]' shows the NMEA as it arrives (up to 10 s); 'assistnow <token>|off' with VD_GPS_ASSISTNOW", .hint = "[raw [seconds]|assistnow <token>|off]", .func = c_gps },
     { .command = "update",   .help = "Firmware updates from GitHub releases: show state; check, install, or set off|notify|auto", .hint = "[check|install|off|notify|auto]", .func = c_update },
     { .command = "weather",  .help = "Forecast and its location; 'loc <lat> <lon>' sets one by hand, 'refresh' fetches now", .hint = "[refresh|loc <lat> <lon>]", .func = c_weather },
     { .command = "net",      .help = "Wi-Fi in use and the remembered networks; 'forget <ssid>' drops one", .hint = "[forget <ssid>]", .func = c_wifi },

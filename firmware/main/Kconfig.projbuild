@@ -122,6 +122,16 @@ menu "GPS"
         int "Baud rate"
         depends on VD_GPS
         default 9600
+    config VD_GPS_ASSISTNOW
+        bool "AssistNow Online at start-up (needs a legacy u-blox token)"
+        depends on VD_GPS
+        default n
+        help
+            With internet at start-up, fetch GPS ephemeris, almanac, ionosphere and time from u-blox's
+            AssistNow Online (GetOnlineData.ashx, format=aid for u-blox 7) and forward it to the module ahead of
+            the saved data. Needs a token from the legacy AssistNow Online/Offline service, set with
+            'gps assistnow <token>' (kept in NVS, never printed). u-blox no longer issues these tokens; the
+            newer Live/Predictive Orbits service sends UBX-MGA, which u-blox 7 modules don't understand.
 endmenu
 
 menu "KIB tank sensors"

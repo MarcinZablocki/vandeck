@@ -3,14 +3,21 @@
 // first for the weather (net/weather.c, then Starlink, then a location set by hand); RMC time sets the clock while
 // SNTP hasn't (net/time_svc.c).
 // With the module's RX wired (VD_GPS_TX_GPIO) it also gets aiding for a faster first fix:
+//   - AssistNow Autonomous (AOP) switched on at every start (UBX-CFG-NAVX5; the setting lives in the module's RAM):
+//     from broadcast ephemeris the module works out orbits that stay usable for about 3 days;
+//   - optional AssistNow Online (VD_GPS_ASSISTNOW, a legacy u-blox token in NVS): fresh AID frames over HTTPS;
 //   - UBX-AID-INI at start-up: the clock (once SNTP has it) and the last known position (g_cfg.wx_*);
-//   - ephemeris, almanac and ionosphere data read back from the module every 30 min while it has a fix
-//     (AID-EPH/ALM/HUI), kept in GPS_DIR/aid.bin and replayed at the next start (ephemeris only under 4 h old).
+//   - ionosphere/UTC, almanac, ephemeris and AOP data read back from the module every 30 min while it has a fix
+//     (AID-HUI/ALM/EPH/AOP), kept in GPS_DIR/aid.bin and replayed at the next start: ephemeris only under 4 h old,
+//     AOP under 3 days. AOP needs HUI and the full date and time (u-blox 7 receiver description, 15.8), so it
+//     goes after AID-INI and HUI, and only when the time is known.
 // Track: GPS_TRACK_DIR/YYYYMMDD.csv gets a point only when the van has really moved; the oldest days go when the
 // storage runs low. Without the 'storage' partition, aiding replay and the track are skipped.
 #include "gps.h"
 #include "sdkconfig.h"
+#include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #if CONFIG_VD_GPS
 #include "app/model.h"
@@ -18,6 +25,12 @@
 #include "app/solar_log.h"
 #include "net/time_svc.h"
 #include "driver/uart.h"
+#if CONFIG_VD_GPS_ASSISTNOW
+#include "esp_crt_bundle.h"
+#include "esp_http_client.h"
+#include "freertos/idf_additions.h"
+#include "nvs.h"
+#endif
 #include "driver/gpio.h"
 #include "esp_heap_caps.h"
 #include "esp_littlefs.h"
@@ -45,6 +58,9 @@ static const char *TAG = "gps";
 #define AID_EVERY_US    (30 * 60 * 1000000LL)
 #define EPH_MAX_AGE_S   (4 * 3600)              // GPS ephemeris is good for about 4 h
 #define ALM_MAX_AGE_S   (30 * 86400)
+#define AOP_MAX_AGE_S   (3 * 86400)             // AOP orbits: about 3 days at the firmware's default error limit
+#define AOP_LEN         60                      // AID-AOP without the optional 3 x 48 bytes, which only save the module time
+#define AOP_STATUS_EVERY_US (5 * 60 * 1000000LL)
 #define AID_WAIT_SNTP_US (2 * 60 * 1000000LL)   // after the module shows up, wait this long for SNTP before aiding
 #define TRACK_MIN_DIST_M  10.0
 #define TRACK_HDOP_DIST_M 8.0                   // stationary jitter: need a move of max(10 m, 8 x HDOP)
@@ -62,16 +78,21 @@ typedef struct {
     int quality, sats; float hdop; double lat, lon; float alt;
     bool rmc_ok; int64_t utc; float kmh, course;
     uint8_t wcls, wid; volatile bool wdone;      // ubx_poll: waiting for (cls, id)
-    int cap_fd, cap_n;                           // AID frames being saved
+    uint8_t ack_cls, ack_id; volatile int8_t ack; // ubx_cmd: waiting for ACK (1) / NAK (-1) of (cls, id)
+    int cap_fd, cap_n, aop_n, aop_seen;          // AID frames being saved; AOP among them; AOP replies so far
     int64_t log_utc; double log_lat, log_lon;    // last track point
 } st_t;
 
 static st_t *S;
 static bool s_fs;
-static char s_sw[31], s_hw[11], s_aid[80] = "not yet";
+static char s_sw[31], s_hw[11], s_aid[160] = "not yet";
 static volatile uint32_t s_bytes, s_sentences, s_bad;
-static int64_t s_aid_saved;
-static int s_aid_frames;
+static int64_t s_aid_saved, s_fix_us;
+static int s_aid_frames, s_aop_frames;
+static int8_t s_aop = -1, s_aop_sats = -1;
+#if CONFIG_VD_GPS_ASSISTNOW
+static char s_token[64], s_online_st[48] = "not tried yet";
+#endif
 static TaskHandle_t s_task;
 static portMUX_TYPE s_mux = portMUX_INITIALIZER_UNLOCKED;
 static char *s_raw; static size_t s_raw_n, s_raw_cap;
@@ -95,10 +116,24 @@ static void on_ubx(const ubx_t *f)
         memcpy(s_sw, f->payload, 30); s_sw[30] = 0;
         memcpy(s_hw, f->payload + 30, 10); s_hw[10] = 0;
     }
-    // AID-HUI always; AID-ALM/EPH with an 8-byte payload mean "nothing for this satellite".
-    if (S->cap_fd >= 0 && f->cls == 0x0B && (f->id == 0x02 || ((f->id == 0x30 || f->id == 0x31) && f->len > 8))) {
-        uint8_t h[4] = { f->cls, f->id, f->len & 0xFF, f->len >> 8 };
-        if (write(S->cap_fd, h, 4) == 4 && write(S->cap_fd, f->payload, f->len) == f->len) S->cap_n++;
+    if (f->cls == 0x05 && f->len >= 2 && f->payload[0] == S->ack_cls && f->payload[1] == S->ack_id)   // ACK-ACK / ACK-NAK
+        S->ack = f->id == 0x01 ? 1 : -1;
+    if (f->cls == 0x01 && f->id == 0x60 && f->len >= 12) {          // NAV-AOPSTATUS: availGPS, one bit per PRN
+        uint32_t avail;
+        memcpy(&avail, f->payload + 8, 4);
+        s_aop_sats = __builtin_popcount(avail);
+    }
+    // AID-HUI always; AID-ALM/EPH with an 8-byte payload mean "nothing for this satellite". AID-AOP comes back
+    // for each of the 32 PRNs, as the 1-byte poll when there's no data; kept without its optional part.
+    if (S->cap_fd >= 0 && f->cls == 0x0B) {
+        uint16_t len = f->len;
+        bool keep = f->id == 0x02 || ((f->id == 0x30 || f->id == 0x31) && len > 8);
+        if (f->id == 0x33) { S->aop_seen++; if (len >= AOP_LEN) { keep = true; len = AOP_LEN; } }
+        uint8_t h[4] = { f->cls, f->id, len & 0xFF, len >> 8 };
+        if (keep && write(S->cap_fd, h, 4) == 4 && write(S->cap_fd, f->payload, len) == len) {
+            S->cap_n++;
+            if (f->id == 0x33) S->aop_n++;
+        }
     }
     if (f->cls == S->wcls && f->id == S->wid) S->wdone = true;
 }
@@ -221,6 +256,17 @@ static bool ubx_poll(uint8_t cls, uint8_t id, int timeout_ms)
     return S->wdone;
 }
 
+// Send a CFG message and wait for its ACK: 1 acknowledged, -1 refused (NAK), 0 no answer.
+static int ubx_cmd(uint8_t cls, uint8_t id, const uint8_t *p, uint16_t len, int timeout_ms)
+{
+    S->ack_cls = cls; S->ack_id = id; S->ack = 0;
+    ubx_send(cls, id, p, len);
+    int64_t end = now_us() + timeout_ms * 1000LL;
+    while (!S->ack && now_us() < end) pump(20);
+    S->ack_cls = S->ack_id = 0xFF;
+    return S->ack;
+}
+
 // ---------------------------------------------------------------- model
 
 static void publish(void)
@@ -276,6 +322,19 @@ static void send_aid_ini(bool have_time, char *desc, size_t n)
     snprintf(desc, n, "time %s, position %s", have_time ? "yes" : "no", src < 4 && src ? SRC[src] : "none");
 }
 
+// AssistNow Autonomous on: UBX-CFG-NAVX5 with only mask1's aop bit (14) applied, useAOP set, aopOrbMaxErr 0 = the
+// firmware default (about 3 days of orbits). Kept in the module's RAM only, so it's sent at every start.
+static void enable_aop(void)
+{
+    uint8_t p[40] = { 0 };
+    p[3] = 0x40;                    // mask1, little-endian: bit 14
+    p[27] = 0x01;                   // aopCfg: useAOP
+    int r = ubx_cmd(0x06, 0x23, p, sizeof p, 1000);
+    if (r) s_aop = r > 0;
+    if (r > 0) ESP_LOGI(TAG, "AssistNow Autonomous on");
+    else if (r < 0) ESP_LOGW(TAG, "module refused AssistNow Autonomous (CFG-NAVX5 NAK)");
+}
+
 static bool read_aid_header(int fd, uint32_t *saved)
 {
     uint32_t h[2];
@@ -284,28 +343,37 @@ static bool read_aid_header(int fd, uint32_t *saved)
     return true;
 }
 
-// Replay the frames saved by an earlier session.
-static void replay_aid(bool have_time, char *desc, size_t n)
+// Replay the frames saved by an earlier session. After AssistNow Online only AOP: the rest is older than its data.
+static void replay_aid(bool have_time, bool online, char *desc, size_t n)
 {
     int fd = s_fs ? open(AID_FILE, O_RDONLY) : -1;
     uint32_t saved;
-    if (fd < 0 || !read_aid_header(fd, &saved)) { if (fd >= 0) close(fd); snprintf(desc, n, ", nothing saved"); return; }
+    if (fd < 0 || !read_aid_header(fd, &saved)) { if (fd >= 0) close(fd); snprintf(desc, n, "; nothing saved"); return; }
     int64_t age = have_time ? (int64_t)time(NULL) - saved : INT64_MAX;
-    if (age < 0 || age > ALM_MAX_AGE_S) { close(fd); snprintf(desc, n, ", saved data too old%s", have_time ? "" : " (no time)"); return; }
-    bool eph = age < EPH_MAX_AGE_S;
+    if (age < 0 || age > ALM_MAX_AGE_S) { close(fd); snprintf(desc, n, "; saved data too old%s", have_time ? "" : " (no time)"); return; }
+    bool eph = age < EPH_MAX_AGE_S, aop = age < AOP_MAX_AGE_S;
     uint8_t *buf = heap_caps_malloc(512, MALLOC_CAP_SPIRAM), h[4];
-    int sent = 0, skipped = 0;
+    int sent = 0, sent_aop = 0, old_eph = 0, old_aop = 0;
     while (buf && read(fd, h, 4) == 4) {
         uint16_t len = h[2] | h[3] << 8;
         if (len > 512 || read(fd, buf, len) != len) break;
-        if (h[1] == 0x31 && !eph) { skipped++; continue; }
+        if (online && h[1] != 0x33) continue;
+        if (h[1] == 0x31 && !eph) { old_eph++; continue; }
+        if (h[1] == 0x33 && !aop) { old_aop++; continue; }
         ubx_send(h[0], h[1], buf, len);
         pump(5);                    // keep reading NMEA while the frames go out (~110 ms each at 9600)
         sent++;
+        if (h[1] == 0x33) sent_aop++;
     }
     free(buf);
     close(fd);
-    snprintf(desc, n, ", %d saved frames (%lld min old%s)", sent, (long long)(age / 60), skipped ? ", ephemeris too old" : "");
+    char a[24];
+    gps_fmt_age(age, a, sizeof a);
+    int k = snprintf(desc, n, "; %d saved frames, %s old", sent, a);
+    if (k < (int)n && old_eph) k += snprintf(desc + k, n - k, ", ephemeris too old");
+    if (k < (int)n && sent_aop) k += snprintf(desc + k, n - k, ", AOP for %d satellites", sent_aop);
+    else if (k < (int)n && old_aop) k += snprintf(desc + k, n - k, ", AOP too old");
+    else if (k < (int)n) snprintf(desc + k, n - k, ", no AOP saved");
 }
 
 static void save_aid(void)
@@ -315,18 +383,22 @@ static void save_aid(void)
     if (S->cap_fd < 0) return;
     uint32_t h[2] = { AID_MAGIC, (uint32_t)time(NULL) };
     write(S->cap_fd, h, 8);
-    S->cap_n = 0;
+    S->cap_n = S->aop_n = S->aop_seen = 0;
     ubx_send(0x0B, 0x02, NULL, 0);  // AID-HUI
     ubx_send(0x0B, 0x30, NULL, 0);  // AID-ALM, every satellite
     ubx_send(0x0B, 0x31, NULL, 0);  // AID-EPH, every satellite
     pump_for(8000);
+    // AID-AOP: a reply per PRN, up to 204 bytes each with the optional data: ~7 s at 9600 baud.
+    ubx_send(0x0B, 0x33, NULL, 0);
+    int64_t end = now_us() + 12 * 1000000LL;
+    while (S->aop_seen < 32 && now_us() < end) pump(20);
     close(S->cap_fd);
     S->cap_fd = -1;
     if (S->cap_n > 0) {
         unlink(AID_FILE);
         rename(AID_TMP, AID_FILE);
-        s_aid_saved = h[1]; s_aid_frames = S->cap_n;
-        ESP_LOGI(TAG, "saved %d aiding frames from the module", S->cap_n);
+        s_aid_saved = h[1]; s_aid_frames = S->cap_n; s_aop_frames = S->aop_n;
+        ESP_LOGI(TAG, "saved %d aiding frames from the module (%d AOP)", S->cap_n, S->aop_n);
     } else {
         unlink(AID_TMP);
         ESP_LOGW(TAG, "module returned no aiding data");
@@ -341,10 +413,117 @@ static void load_aid_info(void)
     if (read_aid_header(fd, &saved)) {
         s_aid_saved = saved;
         uint8_t h[4];
-        while (read(fd, h, 4) == 4 && lseek(fd, h[2] | h[3] << 8, SEEK_CUR) >= 0) s_aid_frames++;
+        while (read(fd, h, 4) == 4 && lseek(fd, h[2] | h[3] << 8, SEEK_CUR) >= 0) {
+            s_aid_frames++;
+            if (h[1] == 0x33) s_aop_frames++;
+        }
     }
     close(fd);
 }
+
+#if CONFIG_VD_GPS_ASSISTNOW
+// AssistNow Online, the legacy MGA service in its u-blox 7 form (format=aid): one HTTPS GET at start-up returns
+// AID-INI (time, and the position we sent), AID-HUI, AID-ALM and AID-EPH, ready to forward. "aidfull" in u-blox's
+// migration table: every satellite's ephemeris, not only those in view. The token is in the URL, so the URL is
+// never logged. TLS needs more stack than the GPS task has: the GET runs on a short-lived task with its stack in
+// PSRAM (it doesn't touch flash).
+#define AN_NS  "vd_gps"
+#define AN_URL "https://online-live1.services.u-blox.com/GetOnlineData.ashx"
+#define AN_MAX (16 * 1024)          // GPS eph + alm + aux is about 6 KB
+
+typedef struct { char url[256]; uint8_t *buf; int n, status; volatile bool done; } an_job_t;
+
+static void an_fetch(void *arg)
+{
+    an_job_t *j = arg;
+    esp_http_client_config_t c = { .url = j->url, .timeout_ms = 10000, .crt_bundle_attach = esp_crt_bundle_attach };
+    esp_http_client_handle_t h = esp_http_client_init(&c);
+    j->n = -1;
+    if (h && esp_http_client_open(h, 0) == ESP_OK) {
+        esp_http_client_fetch_headers(h);
+        j->status = esp_http_client_get_status_code(h);
+        int n = 0, r;
+        while (n < AN_MAX && (r = esp_http_client_read(h, (char *)j->buf + n, AN_MAX - n)) > 0) n += r;
+        j->n = n;
+    }
+    if (h) { esp_http_client_close(h); esp_http_client_cleanup(h); }
+    j->done = true;
+    vTaskSuspend(NULL);             // deleted by the GPS task
+}
+
+// Returns the number of frames forwarded; describes the result in desc ("" when there's no token).
+static int online_aid(char *desc, size_t n)
+{
+    desc[0] = 0;
+    if (!s_token[0]) return 0;
+    model_lock();
+    bool wifi = M.wifi.connected;
+    uint8_t src = g_cfg.wx_src; float lat = g_cfg.wx_lat, lon = g_cfg.wx_lon;
+    model_unlock();
+    if (!wifi) { snprintf(s_online_st, sizeof s_online_st, "no Wi-Fi at start-up"); return 0; }
+    an_job_t *j = heap_caps_calloc(1, sizeof *j, MALLOC_CAP_SPIRAM);
+    if (j) j->buf = heap_caps_malloc(AN_MAX, MALLOC_CAP_SPIRAM);
+    TaskHandle_t th = NULL;
+    if (j && j->buf) {
+        int k = snprintf(j->url, sizeof j->url, AN_URL "?token=%s;gnss=gps;datatype=pos,eph,alm,aux;format=aid", s_token);
+        if (src != WX_SRC_NONE)   // pacc in metres, as for AID-INI: 100 km set by hand, 10 km otherwise
+            snprintf(j->url + k, sizeof j->url - k, ";lat=%.3f;lon=%.3f;pacc=%d", lat, lon, src == WX_SRC_MANUAL ? 100000 : 10000);
+    }
+    if (!j || !j->buf || xTaskCreateWithCaps(an_fetch, "gps_an", 8192, j, 3, &th, MALLOC_CAP_SPIRAM) != pdPASS) {
+        snprintf(s_online_st, sizeof s_online_st, "no memory");
+        if (j) free(j->buf);
+        free(j);
+        return 0;
+    }
+    while (!j->done) pump(100);     // the HTTP timeouts bound this
+    vTaskDeleteWithCaps(th);
+
+    int frames = 0;
+    if (j->n > 0 && j->status == 200 && j->buf[0] == 0xB5) {
+        for (int i = 0; i + 8 <= j->n && j->buf[i] == 0xB5 && j->buf[i + 1] == 0x62; ) {
+            int len = j->buf[i + 4] | j->buf[i + 5] << 8;
+            if (i + 8 + len > j->n) break;
+            uart_write_bytes(PORT, j->buf + i, 8 + len);   // complete frames, checksum included
+            pump(5);
+            frames++;
+            i += 8 + len;
+        }
+        snprintf(s_online_st, sizeof s_online_st, "%d frames, %.1f KB at start-up", frames, j->n / 1024.0);
+        ESP_LOGI(TAG, "AssistNow Online: %d frames, %d bytes", frames, j->n);
+    } else if (j->n < 0) {
+        snprintf(s_online_st, sizeof s_online_st, "no connection");
+    } else {
+        // An error comes back as text ("Unauthorized", ...): show its start, printable characters only.
+        char t[24] = "";
+        int m = 0;
+        for (int i = 0; i < j->n && m < (int)sizeof t - 1; i++) if (j->buf[i] >= ' ' && j->buf[i] <= '~') t[m++] = j->buf[i];
+        t[m] = 0;
+        snprintf(s_online_st, sizeof s_online_st, "HTTP %d %s", j->status, t);
+        ESP_LOGW(TAG, "AssistNow Online failed: %s", s_online_st);
+    }
+    free(j->buf);
+    free(j);
+    if (frames) snprintf(desc, n, "AssistNow Online %d frames; ", frames);
+    else snprintf(desc, n, "AssistNow Online failed; ");
+    return frames;
+}
+
+bool gps_set_token(const char *token)
+{
+    size_t n = strlen(token);
+    if (n && (n < 16 || n >= sizeof s_token)) return false;
+    for (const char *p = token; *p; p++)
+        if (!((*p >= '0' && *p <= '9') || (*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') || *p == '-' || *p == '_')) return false;
+    nvs_handle_t h;
+    if (nvs_open(AN_NS, NVS_READWRITE, &h) != ESP_OK) return false;
+    if (n) nvs_set_str(h, "token", token); else nvs_erase_key(h, "token");
+    nvs_commit(h);
+    nvs_close(h);
+    strlcpy(s_token, token, sizeof s_token);
+    snprintf(s_online_st, sizeof s_online_st, n ? "token set, used at the next start" : "no token");
+    return true;
+}
+#endif
 
 // ---------------------------------------------------------------- track
 
@@ -443,8 +622,8 @@ static void task(void *arg)
     if (!tx) snprintf(s_aid, sizeof s_aid, "none (listen only)");
 
     bool aided = !tx, had_fix = false;
-    int64_t seen_at = 0, ver_next = 0, aid_next = 0, clock_next = 0, pub_next = 0;
-    int ver_tries = 0;
+    int64_t seen_at = 0, ver_next = 0, aid_next = 0, clock_next = 0, pub_next = 0, aop_next = 0, aops_next = 0;
+    int ver_tries = 0, aop_tries = 0;
     for (;;) {
         pump(100);
         int64_t t = now_us();
@@ -460,6 +639,16 @@ static void task(void *arg)
             if (ubx_poll(0x0A, 0x04, 1500)) ESP_LOGI(TAG, "u-blox SW %s, HW %s", s_sw, s_hw);
             else if (ver_tries == 5) ESP_LOGW(TAG, "no answer to UBX-MON-VER: is the module's RX wired to GPIO %d?", CONFIG_VD_GPS_TX_GPIO);
         }
+        // AssistNow Autonomous: before the aiding below, once the module has answered.
+        if (tx && s_sw[0] && s_aop < 0 && aop_tries < 3 && t >= aop_next) {
+            aop_tries++;
+            aop_next = t + 10 * 1000000LL;
+            enable_aop();
+        }
+        if (tx && s_sw[0] && t >= aops_next) {                      // how many satellites it has AOP orbits for
+            aops_next = t + AOP_STATUS_EVERY_US;
+            ubx_poll(0x01, 0x60, 1500);
+        }
 
         // Aiding once: when SNTP has the time, or after waiting a while for it. Pointless once there's a fix.
         if (!aided) {
@@ -467,14 +656,21 @@ static void task(void *arg)
             if (fix) { aided = true; snprintf(s_aid, sizeof s_aid, "none (already had a fix)"); }
             else if (sntp || t - seen_at > AID_WAIT_SNTP_US) {
                 aided = true;
-                size_t k;
-                send_aid_ini(sntp, s_aid, sizeof s_aid);
+                int online = 0;
+                s_aid[0] = 0;
+#if CONFIG_VD_GPS_ASSISTNOW
+                if (sntp) online = online_aid(s_aid, sizeof s_aid);   // SNTP synced: there's internet
+#endif
+                size_t k = strlen(s_aid);
+                send_aid_ini(sntp, s_aid + k, sizeof s_aid - k);       // after Online's: our clock is closer
                 k = strlen(s_aid);
-                replay_aid(sntp, s_aid + k, sizeof s_aid - k);
+                replay_aid(sntp, online > 0, s_aid + k, sizeof s_aid - k);
                 ESP_LOGI(TAG, "aiding: %s", s_aid);
+                aops_next = now_us() + 30 * 1000000LL;
             }
         }
 
+        if (fix) s_fix_us = t;
         if (fix && !had_fix) {
             had_fix = true;
             ESP_LOGI(TAG, "fix: %.5f, %.5f, %d satellites, HDOP %.1f", S->lat, S->lon, S->sats, S->hdop);
@@ -488,7 +684,7 @@ static void task(void *arg)
             if (time_svc_set_from_gps(S->utc)) ESP_LOGI(TAG, "clock set from GPS");
         }
         if (fix) track_point();
-        if (tx && fix && aid_next && t >= aid_next) { aid_next = t + AID_EVERY_US; save_aid(); }
+        if (tx && fix && aid_next && t >= aid_next) { aid_next = t + AID_EVERY_US; save_aid(); aops_next = 0; }
     }
 }
 
@@ -496,7 +692,16 @@ void gps_init(void)
 {
     S = heap_caps_calloc(1, sizeof *S, MALLOC_CAP_SPIRAM);
     if (!S) { ESP_LOGE(TAG, "no memory"); return; }
-    S->li = -1; S->cap_fd = -1; S->hdop = 99.9f; S->wcls = S->wid = 0xFF;
+    S->li = -1; S->cap_fd = -1; S->hdop = 99.9f; S->wcls = S->wid = S->ack_cls = S->ack_id = 0xFF;
+#if CONFIG_VD_GPS_ASSISTNOW
+    nvs_handle_t h;
+    size_t n = sizeof s_token;
+    if (nvs_open(AN_NS, NVS_READONLY, &h) == ESP_OK) {
+        if (nvs_get_str(h, "token", s_token, &n) != ESP_OK) s_token[0] = 0;
+        nvs_close(h);
+    }
+    if (!s_token[0]) snprintf(s_online_st, sizeof s_online_st, "no token");
+#endif
     uart_config_t u = { .baud_rate = CONFIG_VD_GPS_BAUD, .data_bits = UART_DATA_8_BITS, .parity = UART_PARITY_DISABLE,
                         .stop_bits = UART_STOP_BITS_1, .flow_ctrl = UART_HW_FLOWCTRL_DISABLE, .source_clk = UART_SCLK_DEFAULT };
     if (uart_driver_install(PORT, RX_BUF, 0, 0, NULL, 0) != ESP_OK || uart_param_config(PORT, &u) != ESP_OK ||
@@ -521,7 +726,18 @@ void gps_info(gps_info_t *o)
     strlcpy(o->hw, s_hw, sizeof o->hw);
     o->bytes = s_bytes; o->sentences = s_sentences; o->bad = s_bad;
     strlcpy(o->aid, s_aid, sizeof o->aid);
-    o->aid_saved = s_aid_saved; o->aid_frames = s_aid_frames;
+    o->aid_saved = s_aid_saved; o->aid_frames = s_aid_frames; o->aop_frames = s_aop_frames;
+    o->aop = s_aop; o->aop_sats = s_aop_sats;
+    if (time_valid()) {
+        int64_t now = time(NULL), up_s = now_us() / 1000000;
+        o->boot_unix = now - up_s;
+        if (s_fix_us) o->fix_unix = now - (now_us() - s_fix_us) / 1000000;
+    }
+#if CONFIG_VD_GPS_ASSISTNOW
+    o->online = true;
+    o->online_token = s_token[0] != 0;
+    strlcpy(o->online_st, s_online_st, sizeof o->online_st);
+#endif
     o->stack_free = s_task ? uxTaskGetStackHighWaterMark(s_task) * sizeof(StackType_t) : 0;
 }
 
@@ -545,7 +761,33 @@ size_t gps_raw(char *buf, size_t cap, int ms)
 #else
 
 void gps_init(void) {}
-void gps_info(gps_info_t *o) { memset(o, 0, sizeof *o); }
+void gps_info(gps_info_t *o) { memset(o, 0, sizeof *o); o->aop = o->aop_sats = -1; }
 size_t gps_raw(char *buf, size_t cap, int ms) { if (cap) buf[0] = 0; return 0; }
 
 #endif
+
+void gps_fmt_age(int64_t s, char *b, size_t n)
+{
+    if (s < 0) s = 0;
+    if (s < 60) snprintf(b, n, "%d s", (int)s);
+    else if (s < 3600) snprintf(b, n, "%d min", (int)(s / 60));
+    else if (s < 86400) snprintf(b, n, "%d h %d min", (int)(s / 3600), (int)(s % 3600 / 60));
+    else snprintf(b, n, "%d d %d h", (int)(s / 86400), (int)(s % 86400 / 3600));
+}
+
+// Saves happen only with a fix (every 30 min), so an old save means either the panel was off (saved before this
+// start-up) or the module has had no fix since.
+void gps_aid_note(const gps_info_t *i, char *b, size_t n)
+{
+    b[0] = 0;
+    if (!i->aid_saved) return;
+    int64_t now = time(NULL);
+    char a[24], u[24];
+    gps_fmt_age(now - i->aid_saved, a, sizeof a);
+    if (i->boot_unix && i->aid_saved < i->boot_unix) {
+        gps_fmt_age(now - i->boot_unix, u, sizeof u);
+        snprintf(b, n, "saved %s ago, before this start-up %s ago%s", a, u, i->fix_unix ? "" : "; no fix since");
+    } else if (now - i->aid_saved > 35 * 60)
+        snprintf(b, n, "saved %s ago; %s", a, i->fix_unix > i->aid_saved + 120 ? "fixes since, but nothing new saved" : "no fix since");
+    else snprintf(b, n, "saved %s ago", a);
+}

@@ -162,13 +162,34 @@ Wiring (3.3 V logic only; the module's own 3.3 V regulator is fine on 3.3 V too)
 module's default). If the fix never comes, `gps raw` shows what arrives: nothing at all means the module's TX isn't
 on IO50 (swap the two wires or the two settings); garbage means the baud rate is wrong.
 
-With the module's RX wired the panel also helps it to a faster first fix, as GPS-A did:
+With the module's RX wired the panel also helps it to a faster first fix, as GPS-A did, and so that it starts
+with usable orbits after hours off (broadcast ephemeris is only good for about 4 h, and in the wall shaft of a metal
+van downloading a fresh one can take a long time):
 
+- AssistNow Autonomous (AOP) is switched on at every start (UBX-CFG-NAVX5; the module keeps it in RAM only). From
+  the broadcast ephemeris it works out orbits that stay usable for about 3 days (u-blox's default error limit),
+  offline;
 - at start-up, once SNTP has the time (or after 2 minutes without), UBX-AID-INI with the time and the last known
   position (the weather location), skipped if the module already has a fix;
-- every 30 minutes with a fix, it reads the ephemeris, almanac and ionosphere data back from the module (AID-EPH,
-  AID-ALM, AID-HUI) into `/root/gps/aid.bin`, and replays them at the next start (ephemeris only while under 4 h old,
-  almanac up to 30 days).
+- every 30 minutes with a fix, it reads the ionosphere/UTC, almanac, ephemeris and AOP data back from the module
+  (AID-HUI, AID-ALM, AID-EPH, AID-AOP without its optional part) into `/root/gps/aid.bin`, and replays them at the
+  next start after AID-INI: ephemeris only while under 4 h old, AOP under 3 days, almanac up to 30 days. AOP needs
+  the full date and time and AID-HUI to work (u-blox 7 receiver description, AssistNow Autonomous), so without the
+  time nothing is replayed;
+- optionally AssistNow Online (`VD_GPS_ASSISTNOW`, off by default): with internet at start-up it fetches GPS
+  ephemeris, almanac, ionosphere, time and position (`GetOnlineData.ashx?...;gnss=gps;datatype=pos,eph,alm,aux;
+  format=aid`, the u-blox 7 form) from `online-live1.services.u-blox.com` and forwards the frames before AID-INI;
+  of the saved data only AOP is replayed then. It needs a token from u-blox's legacy AssistNow Online/Offline
+  service: `gps assistnow <token>` keeps it in NVS (`vd_gps`, never printed, never in the repository),
+  `gps assistnow off` clears it. u-blox stopped issuing these tokens when Live/Predictive Orbits came (that service
+  only sends UBX-MGA, which u-blox 7 doesn't understand), and existing developer tokens are to be switched off in
+  2028, so this only helps with a token you already have.
+
+`gps` (and the GPS block in Settings > About) shows what the module got at start-up, the last fix ("none since
+start-up" when there hasn't been one), and how old the saved aiding is, with the reason: saved before this start-up
+(the panel was off) or no fix since (saves only happen with a fix). It also shows whether AssistNow Autonomous is on
+and how many satellites the module has AOP orbits for (UBX-NAV-AOPSTATUS, every 5 min). AOP data builds up over a
+day of fixes: the satellites over the van now are mostly not the ones up there 12 hours later.
 
 The track is one CSV per UTC day, `/root/gps/t/YYYYMMDD.csv` (`time,lat,lon,alt,sats,hdop,kmh`). It gets a point only
 after a real move: at least 10 m or 8 × HDOP, at most one every 30 s, HDOP 5 or better. When the storage partition
@@ -201,7 +222,7 @@ The panel's own commands work there and in the Wi-Fi console (`tools/console.sh`
 | `heater` | LIN link / registration, settings, room temperature |
 | `tanks` | LPG and grey water levels |
 | `starlink` | power, reachability, dish statistics |
-| `gps [raw [s]]` | fix, satellites, HDOP, speed, GPS time; UART counters, module version, aiding, today's track; `raw` prints the NMEA as it arrives (default 3 s, up to 10) |
+| `gps [raw [s]\|assistnow <token>\|off]` | fix, satellites, HDOP, speed, GPS time; UART counters, module version, aiding (start-up, last fix, saved data and why it's that old, AssistNow), today's track; `raw` prints the NMEA as it arrives (default 3 s, up to 10); `assistnow` sets the AssistNow Online token (`VD_GPS_ASSISTNOW` builds) |
 | `weather [refresh\|loc <lat> <lon>]` | forecast and where it's for (GPS, Starlink or by hand) |
 | `net` | Wi-Fi network, RSSI, IP |
 | `ble` | paired devices: RSSI, last advert, reading age |

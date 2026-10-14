@@ -22,7 +22,8 @@ add_executable(vandeck_sim
     ${UI_SRC}
     ${FW}/main/app/model.c
     ${FW}/main/app/sim.c
-    ${FW}/main/io/truma_errors.c)
+    ${FW}/main/io/truma_errors.c
+    ${FW}/main/io/gps.c)
 target_include_directories(vandeck_sim PRIVATE stubs ${FW}/main ${FW}/main/ui ${FW}/main/app ${FW}/main/io)
 target_compile_options(vandeck_sim PRIVATE -include ${CMAKE_CURRENT_SOURCE_DIR}/stubs/sdkconfig.h -Wno-unused-function)
 target_link_libraries(vandeck_sim PRIVATE lvgl SDL2::SDL2 m)
